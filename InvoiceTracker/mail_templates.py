@@ -11,7 +11,7 @@ W przypadku kiedy należność została opłacona, proszę o zignorowanie poniż
 <p><strong>Specyfikacja należności:</strong><br>
 <strong>{company_name}</strong><br>
 <strong>{street_address}</strong><br>
-<strong>{postal_code}</strong>, <strong>{city}</strong><br>
+<strong>{postal_code}</strong>, <strong>{city}</strong>
 <strong>NIP: {nip}</strong><br>
 Nr sprawy: <strong>{case_number}</strong><br>
 Kwota zadłużenia: <strong>{debt_amount} zł</strong><br>

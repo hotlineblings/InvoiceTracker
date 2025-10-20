@@ -35,6 +35,22 @@
         </ul>
         <ul class="navbar-nav ms-auto">
           {% if session.get('logged_in') %}
+          <!-- DROPDOWN WYBORU PROFILU -->
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="profileDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+              Profil: {{ session.get('current_account_name', 'Wybierz...') }}
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
+              {% for account in active_accounts %}
+              <li>
+                <a class="dropdown-item {% if session.get('current_account_id') == account.id %}active{% endif %}"
+                   href="{{ url_for('switch_account', account_id=account.id) }}">
+                  {{ account.name }}
+                </a>
+              </li>
+              {% endfor %}
+            </ul>
+          </li>
           <li class="nav-item">
             <a class="nav-link" href="{{ url_for('logout') }}">Wyloguj</a>
           </li>

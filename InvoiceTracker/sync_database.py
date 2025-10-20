@@ -1,9 +1,27 @@
-# sync_database.py
+"""
+⚠️ DEPRECATED MODULE - DO NOT USE ⚠️
+
+Ten moduł jest PRZESTARZAŁY i NIE WSPIERA MULTI-TENANCY.
+
+Problemy:
+- Używa globalnego API key z .env zamiast per-account credentials
+- Nie filtruje danych po account_id - NARUSZENIE IZOLACJI
+- Nie zapisuje account_id do Case/Invoice - LUKI BEZPIECZEŃSTWA
+
+UŻYJ ZAMIAST TEGO: update_db.py
+- update_db.run_full_sync(account_id)
+- Pełne wsparcie multi-tenancy
+- Bezpieczna izolacja między kontami
+
+Data deprecation: 2025-10-20
+"""
+
 import sys
 import asyncio
 import csv
 from datetime import datetime, date
 import aiohttp
+import warnings
 
 from .models import db, Invoice, Case
 from .src.api.api_client import InFaktAPIClient
@@ -72,9 +90,24 @@ async def fetch_all_details(client, invoices):
 
 def sync_database():
     """
+    ⚠️ DEPRECATED - NIE UŻYWAJ TEJ FUNKCJI ⚠️
+
     Przykładowa funkcja do synchronizacji bazy – pobiera tylko faktury o statusie 'sent' i 'printed'
     (pomijamy 'paid'), następnie zapisuje/aktualizuje je w bazie.
+
+    PROBLEM: Nie wspiera multi-tenancy! Używa globalnego API key!
+    UŻYJ: update_db.run_full_sync(account_id) zamiast tego.
     """
+    warnings.warn(
+        "sync_database() jest DEPRECATED i nie wspiera multi-tenancy. "
+        "Użyj update_db.run_full_sync(account_id) zamiast tego.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    print("[sync_database] ⚠️ WARNING: Używasz deprecated funkcji sync_database()!")
+    print("[sync_database] ⚠️ Ta funkcja NIE WSPIERA multi-tenancy i może spowodować wycieki danych!")
+    print("[sync_database] ⚠️ UŻYJ: update_db.run_full_sync(account_id)")
+    print("[sync_database] Sync Data Base...")
     client = InFaktAPIClient()
 
     # Pobieramy wszystkie faktury (paginacja w razie potrzeby)
@@ -82,7 +115,12 @@ def sync_database():
     offset = 0
     limit = 100
     while True:
-        data_batch = client.list_invoices(offset=offset, limit=limit, fields=["id","uuid","number","invoice_date","gross_price","status","client_id"], order="invoice_date desc")
+        data_batch = client.list_invoices(
+            offset=offset,
+            limit=limit,
+            fields=["id","uuid","number","invoice_date","gross_price","status","client_id"],
+            order="invoice_date desc"
+        )
         if not data_batch:
             break
         if len(data_batch) == 0:
@@ -115,7 +153,9 @@ def sync_database():
             inv_data['currency'] = det.get('currency','PLN')
             inv_data['paid_price'] = det.get('paid_price',0)
             inv_data['left_to_pay'] = det.get('left_to_pay',0)
-            inv_data['client_nip'] = det.get('client_tax_code','')
+
+            # GŁÓWNA ZMIANA: używamy 'client_nip' zamiast 'client_tax_code'
+            inv_data['client_nip'] = det.get('client_nip','')
             inv_data['client_company_name'] = det.get('client_company_name','')
 
         # Klient
@@ -137,13 +177,14 @@ def sync_database():
                 if street:
                     s = street
                     if street_no:
-                        s+=f" {street_no}"
+                        s += f" {street_no}"
                     if flat_no:
-                        s+=f"/{flat_no}"
+                        s += f"/{flat_no}"
                     parts.append(s)
                 if city:
                     parts.append(city)
                 inv_data['client_address'] = ", ".join(parts)
+
         processed_invoices.append(inv_data)
 
     # Zapis do bazy
@@ -166,6 +207,8 @@ def sync_database():
         local_inv.status = inv.get('status','')
         local_inv.paid_price = inv.get('paid_price',0)
         local_inv.client_id = inv.get('client_id','')
+
+        # Ponownie: 'client_nip'
         local_inv.client_nip = inv.get('client_nip','')
         local_inv.client_company_name = inv.get('client_company_name','')
         local_inv.client_email = inv.get('client_email','N/A')

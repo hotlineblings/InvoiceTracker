@@ -4,35 +4,121 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
+import logging
+from contextlib import contextmanager
 
 load_dotenv()
 
-SMTP_SERVER = os.getenv('SMTP_SERVER')
-SMTP_PORT = int(os.getenv('SMTP_PORT', 587))
-SMTP_USERNAME = os.getenv('SMTP_USERNAME')
-SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
-EMAIL_FROM = os.getenv('EMAIL_FROM')
+# SMTP Configuration
+SMTP_SERVER = os.getenv('SMTP_SERVER', 'sgz.nazwa.pl')
+SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
+SMTP_USERNAME = os.getenv('SMTP_USERNAME', 'rozliczenia@aquatest.pl')
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
+SMTP_USE_TLS = os.getenv('SMTP_USE_TLS', 'True').lower() == 'true'
+
+# Global SMTP connection
+_smtp_connection = None
+
+@contextmanager
+def get_smtp_connection():
+    """
+    Context manager for SMTP connection that handles connection, authentication,
+    and cleanup. Reuses existing connection if available.
+    """
+    global _smtp_connection
+    
+    try:
+        if _smtp_connection is None:
+            _smtp_connection = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+            if SMTP_USE_TLS:
+                _smtp_connection.starttls()
+            _smtp_connection.login(SMTP_USERNAME, SMTP_PASSWORD)
+        
+        yield _smtp_connection
+    except Exception as e:
+        # If connection is broken, try to reconnect
+        if _smtp_connection:
+            try:
+                _smtp_connection.quit()
+            except:
+                pass
+            _smtp_connection = None
+        raise e
 
 def send_email(to_email, subject, body, html=False):
-    # Tworzymy wiadomość e-mail
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = subject
-    msg['From'] = EMAIL_FROM
-    msg['To'] = to_email
-
-    if html:
-        # Dodajemy wersję HTML
-        part = MIMEText(body, 'html')
-    else:
-        # Dodajemy wersję plain text
-        part = MIMEText(body, 'plain')
-    msg.attach(part)
-
+    """
+    Send an email using a persistent SMTP connection.
+    """
+    # to_email = "bartoszmachucki@gmail.com"
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.sendmail(EMAIL_FROM, to_email, msg.as_string())
-            print(f"Email wysłany do {to_email}")
+       
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = SMTP_USERNAME
+        msg['To'] = to_email
+
+        if html:
+            msg.attach(MIMEText(body, 'html'))
+        else:
+            msg.attach(MIMEText(body, 'plain'))
+
+        with get_smtp_connection() as smtp:
+            smtp.send_message(msg)
+            print(f"Email sent successfully to {to_email}")
+            return True
+
     except Exception as e:
-        print(f"Błąd przy wysyłce email do {to_email}: {e}")
+        print(f"Error sending email to {to_email}: {str(e)}")
+        return False
+
+def close_smtp_connection():
+    """
+    Explicitly close the SMTP connection.
+    Should be called when shutting down the application.
+    """
+    global _smtp_connection
+    if _smtp_connection:
+        try:
+            _smtp_connection.quit()
+        except:
+            pass
+        _smtp_connection = None
+
+
+def send_email_for_account(account, to_email, subject, body, html=False):
+    """
+    Wysyła email używając konfiguracji SMTP konkretnego konta (dla multi-tenancy).
+
+    Args:
+        account: Obiekt Account z models.py z własnymi ustawieniami SMTP
+        to_email (str): Adres odbiorcy
+        subject (str): Temat wiadomości
+        body (str): Treść wiadomości
+        html (bool): Czy treść jest w formacie HTML
+
+    Returns:
+        bool: True jeśli wysłano pomyślnie, False w przeciwnym razie
+    """
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = account.email_from
+        msg['To'] = to_email
+
+        if html:
+            msg.attach(MIMEText(body, 'html'))
+        else:
+            msg.attach(MIMEText(body, 'plain'))
+
+        # Utwórz dedykowane połączenie SMTP dla tego konta (nie używamy globalnego)
+        with smtplib.SMTP(account.smtp_server, account.smtp_port) as smtp:
+            if os.getenv('SMTP_USE_TLS', 'True').lower() == 'true':
+                smtp.starttls()
+            smtp.login(account.smtp_username, account.smtp_password)
+            smtp.send_message(msg)
+            print(f"Email sent successfully to {to_email} via account: {account.name}")
+            return True
+
+    except Exception as e:
+        print(f"Error sending email to {to_email} for account {account.name}: {str(e)}")
+        return False

@@ -2,10 +2,17 @@
 from datetime import timedelta
 from .mail_templates import MAIL_TEMPLATES
 
-def generate_email(stage, invoice):
+def generate_email(stage, invoice, account):
     """
-    Funkcja generująca temat i treść e-maila (HTML) dla danego etapu 'stage' oraz faktury 'invoice'.
-    Zwraca krotkę: (subject, body_html).
+    Funkcja generująca temat i treść e-maila (HTML) dla danego etapu 'stage', faktury 'invoice' i konta 'account'.
+
+    Args:
+        stage: Nazwa etapu (np. "Przypomnienie o zbliżającym się terminie płatności")
+        invoice: Obiekt Invoice
+        account: Obiekt Account (do przyszłego użycia dla danych firmowych per konto)
+
+    Returns:
+        tuple: (subject, body_html)
     """
     stage_keys_map = {
         "Przypomnienie o zbliżającym się terminie płatności": "stage_1",
