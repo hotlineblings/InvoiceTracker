@@ -479,12 +479,15 @@
     .badge-clickable {
       text-decoration: none;
       cursor: pointer;
-      transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+      color: white !important;  /* Wymuszenie białego tekstu na wszystkich kolorowych badge'ach */
+      transition: transform var(--transition-fast), box-shadow var(--transition-fast), opacity var(--transition-fast);
     }
 
     .badge-clickable:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+      color: white !important;  /* Zachowanie białego koloru przy hover */
+      opacity: 0.9;  /* Subtelne przyciemnienie przy hover dla lepszego feedbacku */
     }
 
     html.dark .badge-clickable:hover {
