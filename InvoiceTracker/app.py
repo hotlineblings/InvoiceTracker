@@ -1,14 +1,15 @@
 # --- POCZĄTEK PLIKU: InvoiceTracker/app.py (Zaktualizowana wersja) ---
 import os
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from flask import Flask, render_template, redirect, url_for, request, flash, session, jsonify  # Dodano jsonify
 from dotenv import load_dotenv
 import logging
 import urllib.parse
+import click
 
 try:
-    from .models import db, Invoice, NotificationLog, Case, SyncStatus, NotificationSettings, Account
+    from .models import db, Invoice, NotificationLog, Case, SyncStatus, NotificationSettings, Account, AccountScheduleSettings
     from .send_email import send_email_for_account
     from .mail_templates import MAIL_TEMPLATES
     from .scheduler import start_scheduler
@@ -16,7 +17,7 @@ try:
     from .update_db import run_full_sync
 except ImportError as e_imp1:
     try:
-        from models import db, Invoice, NotificationLog, Case, SyncStatus, NotificationSettings
+        from models import db, Invoice, NotificationLog, Case, SyncStatus, NotificationSettings, Account, AccountScheduleSettings
         from send_email import send_email_for_account
         from mail_templates import MAIL_TEMPLATES
         from scheduler import start_scheduler
@@ -798,37 +799,81 @@ def create_app():
 
     @app.route('/cron/run_sync')
     def cron_run_sync():
+        """
+        Smart CRON endpoint - uruchamiany co godzinę.
+        Sprawdza które konta wymagają synchronizacji o danej godzinie UTC
+        i uruchamia sync tylko dla nich.
+        """
         is_cron_request = request.headers.get('X-Appengine-Cron') == 'true'
         if not is_cron_request:
             log.warning("Nieautoryzowana próba wywołania /cron/run_sync (nie z Cron).")
             return jsonify({"status": "ignored", "message": "Request not from App Engine Cron"}), 200
 
-        log.info("Otrzymano żądanie z App Engine Cron: /cron/run_sync.")
+        # Pobierz aktualny czas UTC
+        now_utc = datetime.now(timezone.utc)
+        current_hour = now_utc.hour
+        current_minute = now_utc.minute
 
-        # MULTI-TENANCY: Synchronizuj wszystkie aktywne konta
+        log.info(f"[Smart CRON] Otrzymano żądanie z App Engine Cron: /cron/run_sync. Czas UTC: {current_hour:02d}:{current_minute:02d}")
+
+        # MULTI-TENANCY: Pobierz wszystkie aktywne konta
         active_accounts = Account.query.filter_by(is_active=True).all()
 
         if not active_accounts:
-            log.warning("Brak aktywnych kont do synchronizacji.")
-            return jsonify({"status": "no_accounts", "message": "No active accounts to sync"}), 200
+            log.warning("[Smart CRON] Brak aktywnych kont.")
+            return jsonify({"status": "no_accounts", "message": "No active accounts"}), 200
 
-        log.info(f"Uruchamiam synchronizację dla {len(active_accounts)} aktywnych kont...")
+        accounts_to_sync = []
 
-        # Uruchom synchronizację dla każdego aktywnego konta w osobnym wątku
+        # Sprawdź które konta wymagają synchronizacji o tej godzinie
         for account in active_accounts:
-            log.info(f"[cron] Uruchamiam sync dla konta: {account.name} (ID: {account.id})")
+            settings = AccountScheduleSettings.get_for_account(account.id)
+
+            # Sprawdź czy synchronizacja włączona
+            if not settings.is_sync_enabled:
+                log.info(f"[Smart CRON] ⏸️  Pomijam {account.name} - synchronizacja wyłączona")
+                continue
+
+            # Sprawdź czy aktualna godzina UTC odpowiada godzinie synchronizacji
+            if current_hour == settings.sync_hour:
+                accounts_to_sync.append(account)
+                log.info(f"[Smart CRON] ✅ Konto {account.name} (ID: {account.id}) - zaplanowana synchronizacja o {settings.sync_hour:02d}:{settings.sync_minute:02d} UTC")
+            else:
+                log.debug(f"[Smart CRON] ⏭️  Pomijam {account.name} - zaplanowane: {settings.sync_hour:02d}:{settings.sync_minute:02d} UTC, teraz: {current_hour:02d}:{current_minute:02d} UTC")
+
+        if not accounts_to_sync:
+            log.info(f"[Smart CRON] Brak kont do synchronizacji o godzinie {current_hour:02d}:{current_minute:02d} UTC")
+            return jsonify({
+                "status": "no_sync_needed",
+                "message": f"No accounts scheduled for sync at {current_hour:02d}:{current_minute:02d} UTC",
+                "current_time_utc": f"{current_hour:02d}:{current_minute:02d}"
+            }), 200
+
+        # Uruchom synchronizację dla kont które wymagają syncu o tej godzinie
+        log.info(f"[Smart CRON] Uruchamiam synchronizację dla {len(accounts_to_sync)} kont...")
+
+        for account in accounts_to_sync:
+            log.info(f"[Smart CRON] 🔄 Uruchamiam sync dla konta: {account.name} (ID: {account.id})")
             thread = threading.Thread(target=background_sync, args=(app.app_context(), account.id))
             thread.start()
 
-        log.info(f"Wątki background_sync zostały uruchomione dla {len(active_accounts)} kont przez Cron.")
+        log.info(f"[Smart CRON] Wątki background_sync zostały uruchomione dla {len(accounts_to_sync)} kont")
         return jsonify({
             "status": "accepted",
-            "message": f"Sync jobs started for {len(active_accounts)} accounts",
-            "accounts": [{"id": acc.id, "name": acc.name} for acc in active_accounts]
+            "message": f"Sync jobs started for {len(accounts_to_sync)} accounts",
+            "current_time_utc": f"{current_hour:02d}:{current_minute:02d}",
+            "accounts": [{"id": acc.id, "name": acc.name} for acc in accounts_to_sync]
         }), 202
 
     @app.route('/sync_status')
     def sync_status():
+        """
+        Panel monitorowania synchronizacji z filtrowaniem, paginacją i dashboard metrics.
+        """
+        from datetime import timezone as dt_timezone, time as dt_time
+        from zoneinfo import ZoneInfo
+        from sqlalchemy import func
+
         try:
             # MULTI-TENANCY: Pobierz account_id z sesji
             account_id = session.get('current_account_id')
@@ -836,19 +881,84 @@ def create_app():
                 flash("Wybierz profil.", "warning")
                 return redirect(url_for('select_account'))
 
-            # MULTI-TENANCY: Filtruj statusy synchronizacji po account_id (jeśli kolumna istnieje)
-            if hasattr(SyncStatus, 'account_id'):
-                statuses = SyncStatus.query.filter_by(account_id=account_id).order_by(SyncStatus.timestamp.desc()).limit(20).all()
-            else:
-                # Fallback: brak kolumny account_id - pokaż wszystkie (backward compatibility)
-                statuses = SyncStatus.query.order_by(SyncStatus.timestamp.desc()).limit(20).all()
-                flash("UWAGA: Statusy synchronizacji nie są jeszcze per-profil. Wyświetlam wszystkie.", "warning")
+            # Mapowanie typów sync na polskie nazwy
+            SYNC_TYPE_DISPLAY = {
+                'new': 'Nowe faktury',
+                'update': 'Aktualizacja aktywnych',
+                'full': 'Pełna synchronizacja'
+            }
 
-            return render_template('sync_status.html', statuses=statuses)
+            # Strefa czasowa Warsaw
+            warsaw_tz = ZoneInfo('Europe/Warsaw')
+
+            # === FILTROWANIE PO DACIE ===
+            preset = request.args.get('preset')
+            date_from_str = request.args.get('date_from')
+            date_to_str = request.args.get('date_to')
+
+            date_from = None
+            date_to = None
+
+            if preset == 'today':
+                date_from = date.today()
+                date_to = date.today()
+            elif preset == '7days':
+                date_from = date.today() - timedelta(days=7)
+                date_to = date.today()
+            elif preset == '30days':
+                date_from = date.today() - timedelta(days=30)
+                date_to = date.today()
+            else:
+                if date_from_str:
+                    try:
+                        date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+                if date_to_str:
+                    try:
+                        date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+
+            # === BUDOWANIE QUERY ===
+            query = SyncStatus.query.filter_by(account_id=account_id)
+
+            if date_from:
+                query = query.filter(SyncStatus.timestamp >= datetime.combine(date_from, dt_time.min))
+            if date_to:
+                query = query.filter(SyncStatus.timestamp <= datetime.combine(date_to, dt_time.max))
+
+            query = query.order_by(SyncStatus.timestamp.desc())
+
+            # === PAGINACJA ===
+            page = request.args.get('page', 1, type=int)
+            per_page = 20
+            pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+            statuses = pagination.items
+
+            # === KONWERSJA UTC → WARSAW ===
+            for status in statuses:
+                utc_time = status.timestamp.replace(tzinfo=dt_timezone.utc)
+                status.local_timestamp = utc_time.astimezone(warsaw_tz)
+
+            return render_template(
+                'sync_status.html',
+                statuses=statuses,
+                pagination=pagination,
+                SYNC_TYPE_DISPLAY=SYNC_TYPE_DISPLAY,
+                date_from=date_from,
+                date_to=date_to
+            )
+
         except Exception as e:
             log.error(f"Błąd ładowania statusu synchronizacji: {e}", exc_info=True)
             flash("Błąd ładowania historii synchronizacji.", "danger")
-            return render_template('sync_status.html', statuses=[])
+            return render_template('sync_status.html',
+                                 statuses=[],
+                                 pagination=None,
+                                 SYNC_TYPE_DISPLAY={},
+                                 date_from=None,
+                                 date_to=None)
 
     @app.route('/shipping_settings', methods=['GET', 'POST'], endpoint='shipping_settings_view')
     def shipping_settings_view():
@@ -888,6 +998,74 @@ def create_app():
                 db.session.rollback()
             return redirect(url_for('shipping_settings_view'))
         return render_template('shipping_settings.html', settings=current_settings)
+
+    @app.route('/advanced_settings', methods=['GET', 'POST'], endpoint='advanced_settings_view')
+    def advanced_settings_view():
+        """
+        Panel zaawansowanych ustawień harmonogramu dla wybranego profilu.
+        Pozwala ustawić:
+        - Godziny wysyłki emaili
+        - Godziny synchronizacji
+        - Termin pobierania faktur
+        """
+        # Sprawdź czy wybrany profil
+        account_id = session.get('current_account_id')
+        if not account_id:
+            flash("Wybierz profil.", "warning")
+            return redirect(url_for('select_account'))
+
+        account = Account.query.get(account_id)
+        if not account:
+            flash("Nie znaleziono konta.", "danger")
+            return redirect(url_for('select_account'))
+
+        # Pobierz lub utwórz ustawienia
+        settings = AccountScheduleSettings.get_for_account(account_id)
+
+        if request.method == 'POST':
+            try:
+                # Walidacja i zapis
+                settings.mail_send_hour = int(request.form.get('mail_send_hour', 7))
+                settings.mail_send_minute = int(request.form.get('mail_send_minute', 0))
+                settings.is_mail_enabled = request.form.get('is_mail_enabled') == 'on'
+
+                settings.sync_hour = int(request.form.get('sync_hour', 9))
+                settings.sync_minute = int(request.form.get('sync_minute', 0))
+                settings.is_sync_enabled = request.form.get('is_sync_enabled') == 'on'
+
+                settings.invoice_fetch_days_before = int(request.form.get('invoice_fetch_days_before', 1))
+                settings.timezone = request.form.get('timezone', 'Europe/Warsaw')
+                settings.auto_close_after_stage5 = request.form.get('auto_close_after_stage5') == 'on'
+
+                # Walidacja
+                is_valid, errors = settings.validate()
+                if not is_valid:
+                    for error in errors:
+                        flash(error, "danger")
+                    return render_template('advanced_settings.html',
+                                         settings=settings,
+                                         account=account)
+
+                # Zapis
+                db.session.add(settings)
+                db.session.commit()
+
+                flash("Ustawienia zapisane pomyślnie. Będą aktywne od jutra.", "success")
+                log.info(f"[advanced_settings] Zaktualizowano ustawienia dla konta {account.name} (ID: {account_id})")
+
+                return redirect(url_for('advanced_settings_view'))
+
+            except ValueError as e:
+                flash(f"Błąd walidacji: {e}", "danger")
+                db.session.rollback()
+            except Exception as e:
+                flash(f"Błąd zapisu ustawień: {e}", "danger")
+                log.error(f"[advanced_settings] Błąd zapisu dla konta {account_id}: {e}", exc_info=True)
+                db.session.rollback()
+
+        return render_template('advanced_settings.html',
+                             settings=settings,
+                             account=account)
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -988,6 +1166,229 @@ def create_app():
                 log.error(f"Błąd startu schedulera: {e}", exc_info=True)
 
     log.info("Instancja aplikacji Flask została utworzona.")
+
+    # ===== FLASK CLI COMMANDS =====
+
+    @app.cli.command('archive-active-cases')
+    def archive_active_cases_cli():
+        """Archiwizuje wszystkie aktywne Cases dla Aquatest jako archived_before_reset"""
+        from InvoiceTracker.models import Account, Case, NotificationLog
+        from datetime import datetime
+
+        print("=" * 80)
+        print("🗄️  ARCHIWIZACJA AKTYWNYCH SPRAW - Aquatest")
+        print("=" * 80)
+
+        # Pobierz konto Aquatest
+        account = Account.query.filter_by(name='Aquatest').first()
+        if not account:
+            print("❌ BŁĄD: Nie znaleziono konta 'Aquatest'")
+            return
+
+        print(f"\n✅ Znaleziono konto: {account.name} (ID: {account.id})")
+
+        # Znajdź wszystkie aktywne Cases
+        active_cases = Case.query.filter_by(
+            account_id=account.id,
+            status='active'
+        ).all()
+
+        print(f"\n📊 Znaleziono {len(active_cases)} aktywnych spraw do archiwizacji")
+
+        if len(active_cases) == 0:
+            print("\n⚠️  Brak aktywnych spraw do archiwizacji")
+            print("=" * 80)
+            return
+
+        # Potwierdź operację
+        print("\n⚠️  UWAGA: Operacja zmieni status wszystkich aktywnych spraw na 'archived_before_reset'")
+        confirm = input("Kontynuować? (tak/nie): ").strip().lower()
+
+        if confirm != 'tak':
+            print("\n❌ Operacja anulowana przez użytkownika")
+            print("=" * 80)
+            return
+
+        # Archiwizuj Cases
+        archived_count = 0
+        for case in active_cases:
+            case.status = 'archived_before_reset'
+            db.session.add(case)
+
+            # Dodaj wpis do NotificationLog
+            log_entry = NotificationLog(
+                account_id=account.id,
+                client_id=case.client_id,
+                invoice_number=case.case_number,
+                email_to="N/A",
+                subject="Archiwizacja przed resetem",
+                body=f"Sprawa {case.case_number} zarchiwizowana przed resetem systemu synchronizacji.",
+                stage="Archiwizacja",
+                mode="System",
+                sent_at=datetime.utcnow()
+            )
+            db.session.add(log_entry)
+            archived_count += 1
+
+        db.session.commit()
+
+        print(f"\n✅ Zarchiwizowano {archived_count} spraw")
+        print(f"   Nowy status: 'archived_before_reset'")
+        print("\n" + "=" * 80)
+        print("✅ Archiwizacja zakończona pomyślnie")
+        print("=" * 80)
+
+    @app.cli.command('test-sync-days')
+    @click.argument('days', type=int)
+    def test_sync_days_cli(days):
+        """Test synchronizacji z invoice_fetch_days_before = <days>"""
+        from InvoiceTracker.models import Account, AccountScheduleSettings
+        from InvoiceTracker.update_db import sync_new_invoices
+
+        print("=" * 80)
+        print(f"🧪 TEST SYNCHRONIZACJI z invoice_fetch_days_before = {days}")
+        print("=" * 80)
+
+        # Pobierz konto Aquatest
+        account = Account.query.filter_by(name='Aquatest').first()
+        if not account:
+            print("❌ BŁĄD: Nie znaleziono konta 'Aquatest'")
+            return
+
+        print(f"\n✅ Konto: {account.name} (ID: {account.id})")
+
+        # Pobierz ustawienia
+        settings = AccountScheduleSettings.get_for_account(account.id)
+        original_days = settings.invoice_fetch_days_before
+
+        print(f"\n⚙️  Aktualne ustawienie: invoice_fetch_days_before = {original_days} dni")
+        print(f"⚙️  Testowe ustawienie: invoice_fetch_days_before = {days} dni")
+
+        # Tymczasowo zmień ustawienie
+        settings.invoice_fetch_days_before = days
+        db.session.add(settings)
+        db.session.commit()
+
+        print(f"\n🔄 Uruchamiam synchronizację...")
+        print("-" * 80)
+
+        try:
+            # Uruchom synchronizację
+            processed, new_cases, api_calls, duration = sync_new_invoices(account.id)
+
+            print("\n" + "=" * 80)
+            print("📊 WYNIKI SYNCHRONIZACJI:")
+            print("=" * 80)
+            print(f"   ⏱️  Czas trwania: {duration:.2f}s")
+            print(f"   📞 Wywołań API: {api_calls}")
+            print(f"   📄 Przetworzonych faktur: {processed}")
+            print(f"   📋 Nowych spraw (Cases): {new_cases}")
+
+        except Exception as e:
+            print(f"\n❌ BŁĄD podczas synchronizacji: {e}")
+            import traceback
+            print(traceback.format_exc())
+
+        finally:
+            # Przywróć oryginalne ustawienie
+            settings.invoice_fetch_days_before = original_days
+            db.session.add(settings)
+            db.session.commit()
+
+            print(f"\n⚙️  Przywrócono oryginalne ustawienie: invoice_fetch_days_before = {original_days} dni")
+
+        print("\n" + "=" * 80)
+        print("✅ Test zakończony")
+        print("=" * 80)
+
+    @app.cli.command('verify-sync-state')
+    def verify_sync_state_cli():
+        """Weryfikuje stan synchronizacji dla Aquatest"""
+        from InvoiceTracker.models import Account, Case, Invoice, SyncStatus
+
+        print("=" * 80)
+        print("🔍 WERYFIKACJA STANU SYNCHRONIZACJI - Aquatest")
+        print("=" * 80)
+
+        # Pobierz konto Aquatest
+        account = Account.query.filter_by(name='Aquatest').first()
+        if not account:
+            print("❌ BŁĄD: Nie znaleziono konta 'Aquatest'")
+            return
+
+        print(f"\n✅ Konto: {account.name} (ID: {account.id})")
+
+        # === AKTYWNE CASES ===
+        print("\n" + "-" * 80)
+        print("📋 AKTYWNE SPRAWY (Cases):")
+        print("-" * 80)
+
+        active_cases = Case.query.filter_by(
+            account_id=account.id,
+            status='active'
+        ).all()
+
+        print(f"   Liczba aktywnych spraw: {len(active_cases)}")
+
+        if active_cases:
+            print(f"\n   Pierwsze 5 aktywnych spraw:")
+            for case in active_cases[:5]:
+                print(f"      - {case.case_number} (client: {case.client_company_name})")
+            if len(active_cases) > 5:
+                print(f"      ... i {len(active_cases) - 5} więcej")
+
+        # === ORPHANED INVOICES ===
+        print("\n" + "-" * 80)
+        print("🔍 ORPHANED INVOICES (faktury bez Case):")
+        print("-" * 80)
+
+        # UWAGA: Orphaned invoices bez account_id to potencjalny problem izolacji
+        # Ponieważ Invoice.id z InFakt API jest globalnie unikalne, orphaned faktury
+        # mogą teoretycznie należeć do innych kont. Pokazujemy WSZYSTKIE dla diagnozy.
+        orphaned = Invoice.query.filter(
+            Invoice.case_id == None,
+            Invoice.left_to_pay > 0,
+            Invoice.status.in_(['sent', 'printed'])
+        ).all()
+
+        print(f"   Liczba orphaned invoices (WSZYSTKIE profile): {len(orphaned)}")
+        print(f"   ⚠️  UWAGA: Orphaned invoices nie mają account_id - pokazujemy wszystkie dla diagnostyki")
+
+        if orphaned:
+            print(f"\n   Szczegóły:")
+            for inv in orphaned:
+                print(f"      - {inv.invoice_number}: {inv.left_to_pay/100.0:.2f} PLN (termin: {inv.payment_due_date})")
+
+        # === OSTATNIE SYNCHRONIZACJE ===
+        print("\n" + "-" * 80)
+        print("🔄 OSTATNIE 3 SYNCHRONIZACJE:")
+        print("-" * 80)
+
+        syncs = SyncStatus.query.filter_by(account_id=account.id)\
+            .order_by(SyncStatus.timestamp.desc())\
+            .limit(3)\
+            .all()
+
+        if not syncs:
+            print("   ⚠️  Brak rekordów synchronizacji")
+        else:
+            for idx, sync in enumerate(syncs, 1):
+                print(f"\n   #{idx} - {sync.timestamp.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+                print(f"      Typ: {sync.sync_type}")
+                print(f"      Przetworzonych: {sync.processed}")
+                print(f"      Nowych spraw: {sync.new_cases}")
+                print(f"      API calls: {sync.api_calls}")
+                print(f"      Czas: {sync.duration:.2f}s")
+
+        # === PODSUMOWANIE ===
+        print("\n" + "=" * 80)
+        print("📊 PODSUMOWANIE:")
+        print("=" * 80)
+        print(f"   ✅ Aktywne sprawy: {len(active_cases)}")
+        print(f"   {'⚠️' if orphaned else '✅'}  Orphaned invoices: {len(orphaned)}")
+        print(f"   📊 Ostatnich synchronizacji: {len(syncs)}")
+        print("\n" + "=" * 80)
+
     return app
 
 

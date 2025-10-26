@@ -1,8 +1,7 @@
 # --- START FILE: cron.yaml ---
 cron:
-- description: "Codzienna Pełna Synchronizacja Danych (Nowe + Aktualizacja Aktywnych)"
-  url: /cron/run_sync   # Zmieniono z /manual_sync na /cron/run_sync
-  schedule: every day 11:00
-  timezone: Europe/Warsaw
+- description: "Smart CRON - Sprawdza co godzinę które konta wymagają synchronizacji"
+  url: /cron/run_sync
+  schedule: every 1 hours
 # --- END FILE: cron.yaml ---
 

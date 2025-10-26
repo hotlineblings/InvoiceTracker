@@ -17,3 +17,12 @@
 __pycache__/
 # Ignored by the build system
 /setup.cfg
+
+# Virtual environment (huge, don't upload)
+venv/
+*.pyc
+*.pyo
+.DS_Store
+*.log
+backup_*.csv
+cloud-sql-proxy

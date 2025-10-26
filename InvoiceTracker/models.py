@@ -91,13 +91,19 @@ class SyncStatus(db.Model):
     Model SyncStatus – rejestruje informacje o przebiegu synchronizacji:
       - account_id: ID profilu/konta dla którego wykonano synchronizację (multi-tenancy)
       - sync_type: typ synchronizacji ("new", "update", "full")
-      - processed: liczba przetworzonych faktur
+      - processed: liczba przetworzonych faktur (ŁĄCZNIE new + update)
       - timestamp: data wykonania synchronizacji
-      - duration: czas trwania operacji (w sekundach)
+      - duration: czas trwania operacji (w sekundach, ŁĄCZNIE)
       - new_cases: liczba nowych spraw
       - updated_cases: liczba zaktualizowanych spraw
       - closed_cases: liczba zamkniętych spraw
-      - api_calls: liczba wywołań API
+      - api_calls: liczba wywołań API (ŁĄCZNIE)
+
+      NOWE POLA (rozbicie szczegółowe dla typu "full"):
+      - new_invoices_processed: faktury dodane podczas sync_new_invoices()
+      - updated_invoices_processed: faktury zaktualizowane podczas update_existing_cases()
+      - new_sync_duration: czas trwania sync_new_invoices()
+      - update_sync_duration: czas trwania update_existing_cases()
     """
     id = db.Column(db.Integer, primary_key=True)
     # MULTI-TENANCY: Powiązanie z kontem (nullable=True dla wstecznej kompatybilności)
@@ -110,6 +116,12 @@ class SyncStatus(db.Model):
     updated_cases = db.Column(db.Integer, default=0)
     closed_cases = db.Column(db.Integer, default=0)
     api_calls = db.Column(db.Integer, default=0)
+
+    # ROZBICIE SZCZEGÓŁOWE (dla typu "full")
+    new_invoices_processed = db.Column(db.Integer, default=0)
+    updated_invoices_processed = db.Column(db.Integer, default=0)
+    new_sync_duration = db.Column(db.Float, default=0.0)
+    update_sync_duration = db.Column(db.Float, default=0.0)
 
     def __repr__(self):
         return f'<SyncStatus {self.sync_type}: {self.processed} faktur, {self.duration:.2f}s>'
@@ -276,3 +288,120 @@ class Account(db.Model):
 
     def __repr__(self):
         return f'<Account {self.name} (ID: {self.id}, Active: {self.is_active})>'
+
+
+class AccountScheduleSettings(db.Model):
+    """
+    Model przechowujący zaawansowane ustawienia harmonogramu dla każdego konta.
+    - Godziny wysyłki emaili
+    - Godziny synchronizacji
+    - Parametry pobierania faktur
+
+    MULTI-TENANCY: Każde konto ma własne, niezależne ustawienia harmonogramu.
+    """
+    __tablename__ = 'account_schedule_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False, unique=True)
+
+    # Wysyłka emaili (UTC)
+    mail_send_hour = db.Column(db.Integer, default=7, nullable=False)  # 0-23
+    mail_send_minute = db.Column(db.Integer, default=0, nullable=False)  # 0-59
+    is_mail_enabled = db.Column(db.Boolean, default=True, nullable=False)
+
+    # Synchronizacja (UTC)
+    sync_hour = db.Column(db.Integer, default=9, nullable=False)  # 0-23
+    sync_minute = db.Column(db.Integer, default=0, nullable=False)  # 0-59
+    is_sync_enabled = db.Column(db.Boolean, default=True, nullable=False)
+
+    # Parametry pobierania faktur
+    invoice_fetch_days_before = db.Column(db.Integer, default=1, nullable=False)  # 1-30
+
+    # Strefa czasowa (dla wyświetlania w UI)
+    timezone = db.Column(db.String(50), default='Europe/Warsaw', nullable=False)
+
+    # Opcje dodatkowe
+    auto_close_after_stage5 = db.Column(db.Boolean, default=True, nullable=False)
+
+    # Metadata
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relacja
+    account = db.relationship('Account', backref=db.backref('schedule_settings', uselist=False, lazy=True))
+
+    def __repr__(self):
+        return f'<AccountScheduleSettings Account:{self.account_id} Mail:{self.mail_send_hour}:{self.mail_send_minute:02d} Sync:{self.sync_hour}:{self.sync_minute:02d}>'
+
+    @classmethod
+    def get_for_account(cls, account_id):
+        """
+        Pobiera ustawienia dla konta lub tworzy domyślne jeśli nie istnieją.
+
+        Args:
+            account_id (int): ID konta
+
+        Returns:
+            AccountScheduleSettings: Obiekt ustawień
+        """
+        settings = cls.query.filter_by(account_id=account_id).first()
+        if not settings:
+            # Utwórz domyślne ustawienia
+            # Dla Pozytron (ID=2) ustawienia są inne
+            default_fetch_days = 7 if account_id == 2 else 1
+            settings = cls(
+                account_id=account_id,
+                invoice_fetch_days_before=default_fetch_days
+            )
+            db.session.add(settings)
+            db.session.commit()
+        return settings
+
+    @classmethod
+    def get_all_active(cls):
+        """
+        Pobiera ustawienia dla wszystkich aktywnych kont.
+
+        Returns:
+            list[AccountScheduleSettings]: Lista ustawień
+        """
+        return cls.query.join(Account).filter(Account.is_active == True).all()
+
+    def to_dict(self):
+        """Konwersja do słownika dla API/JSON"""
+        return {
+            'account_id': self.account_id,
+            'mail_send_hour': self.mail_send_hour,
+            'mail_send_minute': self.mail_send_minute,
+            'is_mail_enabled': self.is_mail_enabled,
+            'sync_hour': self.sync_hour,
+            'sync_minute': self.sync_minute,
+            'is_sync_enabled': self.is_sync_enabled,
+            'invoice_fetch_days_before': self.invoice_fetch_days_before,
+            'timezone': self.timezone,
+            'auto_close_after_stage5': self.auto_close_after_stage5
+        }
+
+    def validate(self):
+        """
+        Walidacja wartości pól.
+
+        Returns:
+            tuple: (is_valid: bool, errors: list)
+        """
+        errors = []
+
+        if not (0 <= self.mail_send_hour <= 23):
+            errors.append("Godzina wysyłki musi być między 0-23")
+        if not (0 <= self.mail_send_minute <= 59):
+            errors.append("Minuta wysyłki musi być między 0-59")
+
+        if not (0 <= self.sync_hour <= 23):
+            errors.append("Godzina synchronizacji musi być między 0-23")
+        if not (0 <= self.sync_minute <= 59):
+            errors.append("Minuta synchronizacji musi być między 0-59")
+
+        if not (1 <= self.invoice_fetch_days_before <= 30):
+            errors.append("Termin pobierania faktur musi być między 1-30 dni")
+
+        return (len(errors) == 0, errors)

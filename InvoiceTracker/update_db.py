@@ -3,11 +3,11 @@ import sys
 from datetime import datetime, date, timedelta
 # Upewnij się, że importy są poprawne dla Twojej struktury projektu
 try:
-    from .models import db, Invoice, Case, SyncStatus, NotificationSettings, NotificationLog, Account
+    from .models import db, Invoice, Case, SyncStatus, NotificationSettings, NotificationLog, Account, AccountScheduleSettings
     from .src.api.api_client import InFaktAPIClient # Zakładając, że api_client jest w podfolderze src
 except ImportError:
     try:
-       from models import db, Invoice, Case, SyncStatus, NotificationSettings, NotificationLog, Account
+       from models import db, Invoice, Case, SyncStatus, NotificationSettings, NotificationLog, Account, AccountScheduleSettings
        from src.api.api_client import InFaktAPIClient
     except ImportError:
        print("Krytyczny błąd importu w update_db.py. Sprawdź ścieżki.")
@@ -40,11 +40,11 @@ def sync_new_invoices(account_id, start_offset=0, limit=100):
     account = Account.query.get(account_id)
     if not account:
         log.error(f"[sync_new_invoices] Nie znaleziono konta o ID: {account_id}")
-        return 0, 0, 0
+        return 0, 0, 0, 0.0  # FIX: Zwracaj 4 wartości!
 
     if not account.is_active:
         log.warning(f"[sync_new_invoices] Konto '{account.name}' (ID: {account_id}) jest nieaktywne. Pomijam synchronizację.")
-        return 0, 0, 0
+        return 0, 0, 0, 0.0  # FIX: Zwracaj 4 wartości!
 
     # Użyj API key dedykowanego dla tego konta
     client = InFaktAPIClient(api_key=account.infakt_api_key)
@@ -54,14 +54,15 @@ def sync_new_invoices(account_id, start_offset=0, limit=100):
     api_calls_clients = 0
     today = date.today()
 
-    # TESTOWE: Dla Pozytron (ID=2) pobieraj faktury 7 dni przed terminem
-    days_ahead = 7 if account_id == 2 else 1
+    # Pobierz ustawienia harmonogramu dla tego konta
+    settings = AccountScheduleSettings.get_for_account(account_id)
+    days_ahead = settings.invoice_fetch_days_before
     new_case_due_date = today + timedelta(days=days_ahead)
     new_case_due_date_str = new_case_due_date.strftime("%Y-%m-%d")
     offset = start_offset
     start_time = datetime.utcnow()
 
-    log.info(f"[sync_new_invoices] Start dla konta '{account.name}' (ID: {account_id}): szukanie faktur ('sent'/'printed') z terminem {new_case_due_date_str} [{days_ahead} dni przed terminem]. Offset={offset}.")
+    log.info(f"[sync_new_invoices] Start dla konta '{account.name}' (ID: {account_id}): szukanie faktur ('sent'/'printed') z terminem {new_case_due_date_str} [{days_ahead} dni przed terminem zgodnie z ustawieniami]. Offset={offset}.")
 
     while True:
         query_params = {"q[payment_date_eq]": new_case_due_date_str}
@@ -98,8 +99,18 @@ def sync_new_invoices(account_id, start_offset=0, limit=100):
             invoice_num_api = inv_data.get('number', f'ID_{invoice_id}')
 
             try:
-                if db.session.query(Invoice.id).filter_by(id=invoice_id).scalar() is not None:
-                    log.debug(f"[sync_new_invoices] Faktura {invoice_num_api} (ID: {invoice_id}) już istnieje w DB.")
+                # MULTI-TENANCY: Sprawdź czy faktura istnieje ORAZ należy do tego konta
+                # (Invoice nie ma account_id, więc sprawdzamy przez JOIN z Case)
+                existing_invoice = db.session.query(Invoice).outerjoin(Case, Invoice.case_id == Case.id).filter(
+                    Invoice.id == invoice_id,
+                    db.or_(
+                        Case.account_id == account_id,  # Faktura z Case należącym do tego konta
+                        Invoice.case_id == None  # LUB faktura bez Case (orphaned)
+                    )
+                ).first()
+
+                if existing_invoice is not None:
+                    log.info(f"[sync_new_invoices] ⏩ Faktura {invoice_num_api} (ID: {invoice_id}) już istnieje w DB dla tego konta - pomijam.")
                     continue
             except Exception as e_check:
                 log.error(f"[sync_new_invoices] Błąd sprawdzania istnienia faktury {invoice_num_api}: {e_check}", exc_info=True)
@@ -222,28 +233,11 @@ def sync_new_invoices(account_id, start_offset=0, limit=100):
 
     duration = (datetime.utcnow() - start_time).total_seconds()
     total_api_calls = api_calls_listing + api_calls_clients
-    try:
-        # MULTI-TENANCY: Zapisz account_id w SyncStatus (jeśli pole istnieje po migracji)
-        sync_data = {
-            'sync_type': "new",
-            'processed': processed_count,
-            'duration': duration,
-            'new_cases': new_cases_count,
-            'api_calls': total_api_calls
-        }
-        # Sprawdź czy SyncStatus ma już pole account_id (po migracji)
-        if hasattr(SyncStatus, 'account_id'):
-            sync_data['account_id'] = account_id
-
-        sync_record = SyncStatus(**sync_data)
-        db.session.add(sync_record)
-        db.session.commit()
-    except Exception as e_sync:
-        log.error(f"[sync_new_invoices] Błąd zapisu statusu synchronizacji: {e_sync}", exc_info=True)
-        db.session.rollback()
 
     log.info(f"[sync_new_invoices] Zakończono dla konta '{account.name}' (ID: {account_id}). Przetworzono: {processed_count}, Nowe sprawy: {new_cases_count}, API calls (List/Client): {api_calls_listing}/{api_calls_clients}, Czas: {duration:.2f}s.")
-    return processed_count, new_cases_count, total_api_calls
+
+    # ZWRÓCENIE: processed_count, new_cases_count, total_api_calls, duration
+    return processed_count, new_cases_count, total_api_calls, duration
 
 
 # --- update_existing_cases i run_full_sync bez zmian w stosunku do poprzedniej odpowiedzi ---
@@ -295,15 +289,8 @@ def update_existing_cases(account_id, start_offset=0, limit=100):
         if not active_invoice_numbers:
             log.info(f"[update_existing_cases] Brak aktywnych spraw dla konta '{account.name}' (ID: {account_id}).")
             duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Zapisz SyncStatus z account_id jeśli pole istnieje
-            sync_data = {'sync_type': "update", 'processed': 0, 'duration': duration, 'updated_cases': 0, 'closed_cases': 0, 'api_calls': 0}
-            if hasattr(SyncStatus, 'account_id'):
-                sync_data['account_id'] = account_id
-            sync_record = SyncStatus(**sync_data)
-            db.session.add(sync_record)
-            db.session.commit()
-            return 0, 0, 0, 0
+            # ZWRÓCENIE: processed_updates, active_after, closed_cases, api_calls, duration
+            return 0, 0, 0, 0, duration
 
         log.info(f"[update_existing_cases] Znaleziono {active_initial_count} aktywnych spraw dla konta '{account.name}' (ID: {account_id}).")
         remaining_active_numbers = active_invoice_numbers.copy()
@@ -311,17 +298,8 @@ def update_existing_cases(account_id, start_offset=0, limit=100):
     except Exception as e_query:
         log.error(f"[update_existing_cases] Błąd podczas pobierania aktywnych spraw: {e_query}", exc_info=True)
         duration = (datetime.utcnow() - start_time).total_seconds()
-        try:
-            sync_data = {'sync_type': "update", 'processed': 0, 'duration': duration, 'api_calls': api_calls, 'updated_cases': 0, 'closed_cases': 0}
-            if hasattr(SyncStatus, 'account_id'):
-                sync_data['account_id'] = account_id
-            sync_record = SyncStatus(**sync_data)
-            db.session.add(sync_record)
-            db.session.commit()
-        except Exception as db_err:
-            log.error(f"[update_existing_cases] Błąd zapisu statusu synchronizacji po błędzie: {db_err}", exc_info=True)
-            db.session.rollback()
-        return 0, 0, 0, 0
+        # ZWRÓCENIE: processed_updates, active_after, closed_cases, api_calls, duration
+        return 0, 0, 0, api_calls, duration
 
     today = date.today()
     start_date_str = (today - timedelta(days=35)).strftime('%Y-%m-%d')
@@ -446,28 +424,10 @@ def update_existing_cases(account_id, start_offset=0, limit=100):
     if remaining_active_numbers:
         log.warning(f"[update_existing_cases] {len(remaining_active_numbers)} aktywnych spraw nie znaleziono w API dla konta '{account.name}' (ID: {account_id}). Pozostają aktywne.")
 
-    try:
-        # MULTI-TENANCY: Zapisz account_id w SyncStatus jeśli pole istnieje
-        sync_data = {
-            'sync_type': "update",
-            'processed': processed_updates,
-            'duration': duration,
-            'updated_cases': active_after_update,
-            'closed_cases': closed_cases_count,
-            'api_calls': api_calls
-        }
-        if hasattr(SyncStatus, 'account_id'):
-            sync_data['account_id'] = account_id
-
-        sync_record = SyncStatus(**sync_data)
-        db.session.add(sync_record)
-        db.session.commit()
-    except Exception as db_err:
-        log.error(f"[update_existing_cases] Błąd zapisu statusu synchronizacji: {db_err}", exc_info=True)
-        db.session.rollback()
-
     log.info(f"[update_existing_cases] Zakończono dla konta '{account.name}' (ID: {account_id}). Zmodyfikowano: {processed_updates} faktur. Sprawy pozostały aktywne: {active_after_update}. Zamknięto: {closed_cases_count}. Czas: {duration:.2f}s. API calls: {api_calls}")
-    return processed_updates, active_after_update, closed_cases_count, api_calls
+
+    # ZWRÓCENIE: processed_updates, active_after, closed_cases, api_calls, duration
+    return processed_updates, active_after_update, closed_cases_count, api_calls, duration
 
 
 def run_full_sync(account_id):
@@ -493,18 +453,20 @@ def run_full_sync(account_id):
 
     log.info(f"[run_full_sync] Start pełnej synchronizacji dla konta '{account.name}' (ID: {account_id})...")
     start_time = datetime.utcnow()
-    total_processed_new, total_new_cases, total_api_new = 0, 0, 0
-    total_processed_updates, total_active_after, total_closed_update, total_api_update = 0, 0, 0, 0
+    total_processed_new, total_new_cases, total_api_new, new_duration = 0, 0, 0, 0.0
+    total_processed_updates, total_active_after, total_closed_update, total_api_update, update_duration = 0, 0, 0, 0, 0.0
 
     try:
         # MULTI-TENANCY: Przekaż account_id do sync_new_invoices
-        total_processed_new, total_new_cases, total_api_new = sync_new_invoices(account_id)
+        # Zwraca: processed_count, new_cases_count, total_api_calls, duration
+        total_processed_new, total_new_cases, total_api_new, new_duration = sync_new_invoices(account_id)
     except Exception as e_new:
         log.critical(f"[run_full_sync] Krytyczny błąd w sync_new_invoices dla konta '{account.name}': {e_new}", exc_info=True)
 
     try:
         # MULTI-TENANCY: Przekaż account_id do update_existing_cases
-        total_processed_updates, total_active_after, total_closed_update, total_api_update = update_existing_cases(account_id)
+        # Zwraca: processed_updates, active_after, closed_cases, api_calls, duration
+        total_processed_updates, total_active_after, total_closed_update, total_api_update, update_duration = update_existing_cases(account_id)
     except Exception as e_update:
         log.critical(f"[run_full_sync] Krytyczny błąd w update_existing_cases dla konta '{account.name}': {e_update}", exc_info=True)
 
@@ -513,29 +475,32 @@ def run_full_sync(account_id):
     duration = (datetime.utcnow() - start_time).total_seconds()
 
     try:
-        # MULTI-TENANCY: Zapisz account_id w SyncStatus jeśli pole istnieje
-        sync_data = {
-            'sync_type': "full",
-            'processed': total_processed_records,
-            'duration': duration,
-            'new_cases': total_new_cases,
-            'updated_cases': total_active_after,
-            'closed_cases': total_closed_update,
-            'api_calls': total_api_calls
-        }
-        if hasattr(SyncStatus, 'account_id'):
-            sync_data['account_id'] = account_id
-
-        sync_record = SyncStatus(**sync_data)
+        # MULTI-TENANCY: Zapisz JEDEN rekord "full" z pełnym rozbiciem
+        sync_record = SyncStatus(
+            account_id=account_id,
+            sync_type="full",
+            processed=total_processed_records,
+            duration=duration,
+            new_cases=total_new_cases,
+            updated_cases=total_active_after,
+            closed_cases=total_closed_update,
+            api_calls=total_api_calls,
+            # NOWE POLA: rozbicie szczegółowe
+            new_invoices_processed=total_processed_new,
+            updated_invoices_processed=total_processed_updates,
+            new_sync_duration=new_duration,
+            update_sync_duration=update_duration
+        )
         db.session.add(sync_record)
         db.session.commit()
+        log.info(f"[run_full_sync] ✅ Zapisano status synchronizacji (1 rekord 'full' z rozbiciem)")
     except Exception as db_err:
         log.error(f"[run_full_sync] Błąd zapisu statusu pełnej synchronizacji: {db_err}", exc_info=True)
         db.session.rollback()
 
     log.info(f"[run_full_sync] Zakończono pełną synchronizację dla konta '{account.name}' (ID: {account_id}) w {duration:.2f}s.")
-    log.info(f"  Nowe: {total_processed_new} faktur przetworzonych, {total_new_cases} spraw utworzonych (API: {total_api_new})")
-    log.info(f"  Aktualizacje: {total_processed_updates} faktur zmodyfikowanych, {total_active_after} spraw aktywnych, {total_closed_update} spraw zamkniętych (API: {total_api_update})")
+    log.info(f"  Nowe: {total_processed_new} faktur przetworzonych, {total_new_cases} spraw utworzonych (API: {total_api_new}, czas: {new_duration:.2f}s)")
+    log.info(f"  Aktualizacje: {total_processed_updates} faktur zmodyfikowanych, {total_active_after} spraw aktywnych, {total_closed_update} spraw zamkniętych (API: {total_api_update}, czas: {update_duration:.2f}s)")
     log.info(f"  Łącznie przetworzonych/zmienionych: {total_processed_records}. Łącznie API: {total_api_calls}")
 
     return total_processed_records
