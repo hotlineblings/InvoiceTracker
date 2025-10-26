@@ -150,17 +150,15 @@
             <i class="bi bi-bar-chart me-1"></i>
             Postęp
           </th>
-          <th>
-            <i class="bi bi-eye me-1"></i>
-            Szczegóły
-          </th>
         </tr>
       </thead>
       <tbody>
         {% for c in cases %}
         <tr>
           <td>
-            <span class="badge-custom badge-primary">{{ c.case_number }}</span>
+            <a href="{{ url_for('case_detail', case_number=c.case_number) }}" class="badge-custom badge-primary badge-clickable">
+              {{ c.case_number }}
+            </a>
           </td>
           <td>{{ c.client_id }}</td>
           <td>
@@ -212,13 +210,6 @@
                 {{ c.progress_percent }}%
               </div>
             </div>
-          </td>
-          <td>
-            <a href="{{ url_for('case_detail', case_number=c.case_number) }}"
-               class="btn btn-sm btn-info">
-              <i class="bi bi-eye me-1"></i>
-              Pokaż
-            </a>
           </td>
         </tr>
         {% endfor %}

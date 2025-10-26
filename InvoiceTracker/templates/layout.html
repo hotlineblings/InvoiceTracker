@@ -475,6 +475,22 @@
       color: white;
     }
 
+    /* Clickable Badges */
+    .badge-clickable {
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .badge-clickable:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    html.dark .badge-clickable:hover {
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+    }
+
     /* ============================================
        PROGRESS BARS
        ============================================ */
