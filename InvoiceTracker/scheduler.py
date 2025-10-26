@@ -93,8 +93,9 @@ def run_mail_for_single_account(app, account_id):
 
                 days_diff = (today - inv.payment_due_date).days
 
-                # Skip if no email is available
-                if not inv.client_email or inv.client_email == "N/A":
+                # Skip if no email is available (używamy effective email)
+                effective_email = inv.get_effective_email()
+                if not effective_email or effective_email == "N/A":
                     continue
 
                 notification_sent = False
@@ -116,8 +117,8 @@ def run_mail_for_single_account(app, account_id):
                             print(f"[scheduler] Brak szablonu dla {stage_name}, pomijam fakturę {inv.invoice_number}.")
                             continue
 
-                        # Split multiple emails and send to each
-                        emails = [email.strip() for email in inv.client_email.split(',') if email.strip()]
+                        # Split multiple emails and send to each (używamy effective email)
+                        emails = [email.strip() for email in effective_email.split(',') if email.strip()]
                         email_sent_success = False
 
                         for email in emails:
@@ -134,12 +135,12 @@ def run_mail_for_single_account(app, account_id):
                                     time.sleep(5)
 
                         if email_sent_success:
-                            # Log the notification
+                            # Log the notification (używamy effective email)
                             new_log = NotificationLog(
                                 account_id=account.id,
                                 client_id=inv.client_id,
                                 invoice_number=inv.invoice_number,
-                                email_to=inv.client_email,
+                                email_to=effective_email,
                                 subject=subject,
                                 body=body_html,
                                 stage=stage_name,

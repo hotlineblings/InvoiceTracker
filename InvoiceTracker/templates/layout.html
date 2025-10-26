@@ -2,85 +2,1007 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>InvoiceTracker - Panel Windykacyjny</title>
+
+  <!-- Bootstrap 5.3 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-  <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+
+  <!-- Google Fonts - Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <style>
-    .table-success { background-color: #d4edda !important; }
-    .table-danger { background-color: #f8d7da !important; }
-    .table-secondary { background-color: #e2e3e5 !important; }
+    /* ============================================
+       CSS VARIABLES - Light & Dark Modes
+       ============================================ */
+    :root {
+      /* Primary Colors - Royal Blue */
+      --color-primary: #2563eb;
+      --color-primary-dark: #1e40af;
+      --color-primary-light: #3b82f6;
+      --color-primary-gradient: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+
+      /* Secondary Colors - Vivid Purple */
+      --color-secondary: #7c3aed;
+      --color-secondary-dark: #6d28d9;
+      --color-secondary-light: #8b5cf6;
+
+      /* Status Colors */
+      --color-success: #10b981;
+      --color-success-light: #d1fae5;
+      --color-warning: #f59e0b;
+      --color-warning-light: #fef3c7;
+      --color-danger: #ef4444;
+      --color-danger-light: #fee2e2;
+      --color-info: #06b6d4;
+      --color-info-light: #cffafe;
+
+      /* Neutrals */
+      --color-text-primary: #1f2937;
+      --color-text-secondary: #64748b;
+      --color-text-muted: #94a3b8;
+
+      --color-bg-primary: #ffffff;
+      --color-bg-secondary: #f8fafc;
+      --color-bg-tertiary: #f1f5f9;
+
+      --color-border: #e2e8f0;
+      --color-border-light: #f1f5f9;
+
+      /* Shadows */
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+      --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+      /* Transitions */
+      --transition-fast: 0.2s ease;
+      --transition-base: 0.3s ease;
+
+      /* Border Radius */
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+      --radius-xl: 12px;
+    }
+
+    /* Dark Mode Variables */
+    html.dark {
+      --color-text-primary: #e2e8f0;
+      --color-text-secondary: #cbd5e1;
+      --color-text-muted: #94a3b8;
+
+      --color-bg-primary: #0f172a;
+      --color-bg-secondary: #1e293b;
+      --color-bg-tertiary: #334155;
+
+      --color-border: #334155;
+      --color-border-light: #475569;
+
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+      --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.3), 0 8px 10px -6px rgb(0 0 0 / 0.3);
+    }
+
+    /* ============================================
+       BASE STYLES
+       ============================================ */
+    * {
+      transition: background-color var(--transition-base),
+                  color var(--transition-base),
+                  border-color var(--transition-base);
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: var(--color-bg-secondary);
+      color: var(--color-text-primary);
+      min-height: 100vh;
+    }
+
+    /* ============================================
+       NAVBAR
+       ============================================ */
+    .navbar-custom {
+      background: var(--color-primary-gradient);
+      box-shadow: var(--shadow-md);
+      padding: 0.75rem 0;
+      position: sticky;
+      top: 0;
+      z-index: 1030;
+    }
+
+    html.dark .navbar-custom {
+      background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    }
+
+    .navbar-brand {
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: white !important;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .navbar-brand i {
+      font-size: 1.5rem;
+    }
+
+    .nav-link {
+      color: rgba(255, 255, 255, 0.9) !important;
+      font-weight: 500;
+      padding: 0.5rem 1rem !important;
+      border-radius: var(--radius-md);
+      transition: all var(--transition-fast);
+    }
+
+    .nav-link:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+      color: white !important;
+    }
+
+    .nav-link.active {
+      background-color: rgba(255, 255, 255, 0.15);
+      color: white !important;
+    }
+
+    .dropdown-menu {
+      border: none;
+      box-shadow: var(--shadow-lg);
+      border-radius: var(--radius-lg);
+      background-color: var(--color-bg-primary);
+    }
+
+    .dropdown-item {
+      color: var(--color-text-primary);
+      padding: 0.75rem 1.25rem;
+      transition: all var(--transition-fast);
+    }
+
+    .dropdown-item:hover {
+      background-color: var(--color-bg-tertiary);
+      color: var(--color-primary);
+    }
+
+    .dropdown-item.active {
+      background-color: var(--color-primary);
+      color: white;
+    }
+
+    /* Dark Mode Toggle */
+    .dark-mode-toggle {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: white;
+      padding: 0.5rem 0.75rem;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      font-size: 1.25rem;
+      line-height: 1;
+    }
+
+    .dark-mode-toggle:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: scale(1.05);
+    }
+
+    /* ============================================
+       CARDS
+       ============================================ */
+    .card-custom {
+      background-color: var(--color-bg-primary);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      transition: all var(--transition-fast);
+    }
+
+    .card-custom:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+
+    .card-header-gradient {
+      background: var(--color-primary-gradient);
+      color: white;
+      font-weight: 600;
+      padding: 1rem 1.25rem;
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    }
+
+    /* Stats Cards */
+    .stats-card {
+      background: var(--color-bg-primary);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      box-shadow: var(--shadow-sm);
+      transition: all var(--transition-fast);
+    }
+
+    .stats-card:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+
+    .stats-card-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-lg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+    }
+
+    .stats-card-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--color-text-primary);
+      margin-bottom: 0.25rem;
+    }
+
+    .stats-card-label {
+      font-size: 0.875rem;
+      color: var(--color-text-secondary);
+      font-weight: 500;
+    }
+
+    /* ============================================
+       TABLES
+       ============================================ */
+    .table-custom {
+      background-color: var(--color-bg-primary);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .table-custom thead {
+      background: var(--color-primary-gradient);
+    }
+
+    html.dark .table-custom thead {
+      background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    }
+
+    .table-custom thead th {
+      color: white;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      padding: 1rem;
+      border: none;
+      white-space: nowrap;
+    }
+
+    .table-custom tbody tr {
+      border-bottom: 1px solid var(--color-border-light);
+      transition: background-color var(--transition-fast);
+    }
+
+    .table-custom tbody tr:nth-child(even) {
+      background-color: var(--color-bg-secondary);
+    }
+
+    .table-custom tbody tr:hover {
+      background-color: var(--color-bg-tertiary);
+    }
+
+    .table-custom tbody td {
+      padding: 0.875rem 1rem;
+      color: var(--color-text-primary);
+      vertical-align: middle;
+    }
+
+    .table-custom a {
+      color: var(--color-primary);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color var(--transition-fast);
+    }
+
+    .table-custom a:hover {
+      color: var(--color-primary-dark);
+      text-decoration: underline;
+    }
+
+    /* Table sorting headers */
+    .table-sortable-header {
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+      padding-right: 1.5rem !important;
+    }
+
+    .table-sortable-header:hover {
+      opacity: 0.9;
+    }
+
+    /* ============================================
+       BUTTONS
+       ============================================ */
+    .btn {
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      transition: all var(--transition-fast);
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--color-primary-gradient);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-success {
+      background-color: var(--color-success);
+      color: white;
+    }
+
+    .btn-success:hover {
+      background-color: #059669;
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-warning {
+      background-color: var(--color-warning);
+      color: white;
+    }
+
+    .btn-warning:hover {
+      background-color: #d97706;
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-danger {
+      background-color: var(--color-danger);
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background-color: #dc2626;
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-info {
+      background-color: var(--color-info);
+      color: white;
+    }
+
+    .btn-info:hover {
+      background-color: #0891b2;
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-secondary {
+      background-color: var(--color-bg-tertiary);
+      color: var(--color-text-primary);
+    }
+
+    .btn-secondary:hover {
+      background-color: var(--color-border);
+      transform: translateY(-1px);
+    }
+
+    .btn-outline-primary {
+      border: 2px solid var(--color-primary);
+      color: var(--color-primary);
+      background: transparent;
+    }
+
+    .btn-outline-primary:hover {
+      background: var(--color-primary);
+      color: white;
+    }
+
+    /* ============================================
+       BADGES
+       ============================================ */
+    .badge {
+      font-weight: 500;
+      padding: 0.35em 0.65em;
+      border-radius: var(--radius-sm);
+      font-size: 0.875rem;
+    }
+
+    .badge-gradient {
+      background: var(--color-primary-gradient);
+      color: white;
+    }
+
+    .badge-custom {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-md);
+      font-weight: 600;
+      font-size: 0.8125rem;
+      line-height: 1;
+    }
+
+    .badge-primary {
+      background-color: var(--color-primary);
+      color: white;
+    }
+
+    .badge-secondary {
+      background-color: var(--color-secondary);
+      color: white;
+    }
+
+    .badge-success {
+      background-color: var(--color-success);
+      color: white;
+    }
+
+    .badge-warning {
+      background-color: var(--color-warning);
+      color: white;
+    }
+
+    .badge-danger {
+      background-color: var(--color-danger);
+      color: white;
+    }
+
+    .badge-info {
+      background-color: var(--color-info);
+      color: white;
+    }
+
+    /* ============================================
+       PROGRESS BARS
+       ============================================ */
+    .progress-custom {
+      height: 24px;
+      background-color: var(--color-bg-tertiary);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    .progress-bar-custom {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 600;
+      font-size: 0.75rem;
+      transition: width 0.6s ease;
+      min-width: 30px;
+    }
+
+    .progress-bar-gradient {
+      background: linear-gradient(90deg, var(--color-success) 0%, #059669 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 600;
+      font-size: 0.75rem;
+      transition: width 0.6s ease;
+      min-width: 30px;
+    }
+
+    .progress-bar-zero {
+      background-color: #6b7280;
+    }
+
+    .progress-bar-full {
+      background: linear-gradient(90deg, var(--color-success) 0%, #047857 100%);
+    }
+
+    /* ============================================
+       GRADIENT CARDS
+       ============================================ */
+    .card-gradient-primary {
+      background: var(--color-primary-gradient);
+      color: white;
+      border: none;
+    }
+
+    .card-gradient-secondary {
+      background: linear-gradient(135deg, var(--color-secondary-dark) 0%, var(--color-secondary) 100%);
+      color: white;
+      border: none;
+    }
+
+    .stat-icon {
+      width: 3.5rem;
+      height: 3.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(255, 255, 255, 0.2);
+      border-radius: var(--radius-lg);
+      font-size: 1.75rem;
+    }
+
+    /* ============================================
+       PAGE ELEMENTS
+       ============================================ */
+    .page-title {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--color-text-primary);
+      margin-bottom: 0;
+    }
+
+    .card-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: var(--color-text-primary);
+      margin-bottom: 1rem;
+    }
+
+    .card-subtitle {
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    /* Info Items */
+    .info-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .info-label {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .info-value {
+      font-size: 1rem;
+      color: var(--color-text-primary);
+      font-weight: 500;
+    }
+
+    /* ============================================
+       TIMELINE
+       ============================================ */
+    .timeline {
+      position: relative;
+      padding-left: 2rem;
+    }
+
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 0.875rem;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background-color: var(--color-border);
+    }
+
+    .timeline-item {
+      position: relative;
+      padding-bottom: 1.5rem;
+    }
+
+    .timeline-item:last-child {
+      padding-bottom: 0;
+    }
+
+    .timeline-marker {
+      position: absolute;
+      left: -2rem;
+      top: 0.25rem;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      background-color: var(--color-primary);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.875rem;
+      box-shadow: 0 0 0 4px var(--color-bg-primary);
+      z-index: 1;
+    }
+
+    .timeline-content {
+      background-color: var(--color-bg-secondary);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: 1rem;
+      transition: all var(--transition-fast);
+    }
+
+    .timeline-content:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateX(4px);
+    }
+
+    /* ============================================
+       FORMS
+       ============================================ */
+    .form-label {
+      font-weight: 500;
+      color: var(--color-text-secondary);
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+    }
+
+    .form-control, .form-select {
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: 0.625rem 0.875rem;
+      background-color: var(--color-bg-primary);
+      color: var(--color-text-primary);
+      transition: all var(--transition-fast);
+    }
+
+    .form-control:focus, .form-select:focus {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      background-color: var(--color-bg-primary);
+      color: var(--color-text-primary);
+    }
+
+    .form-check-input:checked {
+      background-color: var(--color-primary);
+      border-color: var(--color-primary);
+    }
+
+    .form-check-input:focus {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    /* ============================================
+       ALERTS
+       ============================================ */
+    .alert-custom {
+      border: none;
+      border-radius: var(--radius-lg);
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      box-shadow: var(--shadow-sm);
+      animation: slideDown 0.3s ease;
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .alert-success {
+      background-color: var(--color-success-light);
+      color: #065f46;
+    }
+
+    html.dark .alert-success {
+      background-color: rgba(16, 185, 129, 0.2);
+      color: #6ee7b7;
+    }
+
+    .alert-danger {
+      background-color: var(--color-danger-light);
+      color: #991b1b;
+    }
+
+    html.dark .alert-danger {
+      background-color: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+    }
+
+    .alert-warning {
+      background-color: var(--color-warning-light);
+      color: #92400e;
+    }
+
+    html.dark .alert-warning {
+      background-color: rgba(245, 158, 11, 0.2);
+      color: #fcd34d;
+    }
+
+    .alert-info {
+      background-color: var(--color-info-light);
+      color: #155e75;
+    }
+
+    html.dark .alert-info {
+      background-color: rgba(6, 182, 212, 0.2);
+      color: #67e8f9;
+    }
+
+    /* ============================================
+       PAGINATION
+       ============================================ */
+    .pagination {
+      gap: 0.5rem;
+    }
+
+    .page-link {
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      color: var(--color-text-primary);
+      background-color: var(--color-bg-primary);
+      padding: 0.5rem 0.875rem;
+      font-weight: 500;
+      transition: all var(--transition-fast);
+    }
+
+    .page-link:hover {
+      background-color: var(--color-bg-tertiary);
+      border-color: var(--color-primary);
+      color: var(--color-primary);
+    }
+
+    .page-item.active .page-link {
+      background: var(--color-primary-gradient);
+      border-color: var(--color-primary);
+      color: white;
+    }
+
+    .page-item.disabled .page-link {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .pagination-info {
+      text-align: center;
+      color: var(--color-text-secondary);
+      font-size: 0.9375rem;
+    }
+
+    .pagination-info strong {
+      color: var(--color-text-primary);
+      font-weight: 600;
+    }
+
+    /* ============================================
+       UTILITIES
+       ============================================ */
+    .link-primary {
+      color: var(--color-primary);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color var(--transition-fast);
+    }
+
+    .link-primary:hover {
+      color: var(--color-primary-dark);
+      text-decoration: underline;
+    }
+
+    /* ============================================
+       MORE UTILITIES
+       ============================================ */
+    .text-gradient {
+      background: var(--color-primary-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .bg-gradient-primary {
+      background: var(--color-primary-gradient);
+    }
+
+    .shadow-custom {
+      box-shadow: var(--shadow-md);
+    }
+
+    .hover-lift:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-lg);
+    }
+
+    /* Container */
+    .container {
+      max-width: 1400px;
+    }
+
+    .main-content {
+      padding: 2rem 0;
+      min-height: calc(100vh - 70px);
+    }
+
+    /* ============================================
+       RESPONSIVE
+       ============================================ */
+    @media (max-width: 768px) {
+      .navbar-brand {
+        font-size: 1rem;
+      }
+
+      .stats-card-value {
+        font-size: 1.5rem;
+      }
+
+      .table-custom {
+        font-size: 0.875rem;
+      }
+
+      .btn {
+        font-size: 0.875rem;
+        padding: 0.4rem 0.8rem;
+      }
+    }
   </style>
 </head>
 <body>
-  <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-3">
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-custom">
     <div class="container-fluid">
-      <a class="navbar-brand" href="{{ url_for('active_cases') }}">InvoiceTracker</a>
+      <a class="navbar-brand" href="{{ url_for('active_cases') }}">
+        <i class="bi bi-receipt-cutoff"></i>
+        <span>InvoiceTracker</span>
+      </a>
+
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
         <span class="navbar-toggler-icon"></span>
       </button>
+
       <div class="collapse navbar-collapse" id="navbarNav">
-        <ul class="navbar-nav me-auto">
+        <ul class="navbar-nav me-auto ms-3">
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('active_cases') }}">Sprawy Aktywne</a>
+            <a class="nav-link" href="{{ url_for('active_cases') }}">
+              <i class="bi bi-folder-open me-1"></i>
+              Sprawy Aktywne
+            </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('sync_status') }}">Status Synchronizacji</a>
+            <a class="nav-link" href="{{ url_for('completed_cases') }}">
+              <i class="bi bi-folder-check me-1"></i>
+              Sprawy Zakończone
+            </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('completed_cases') }}">Sprawy Zakończone</a>
+            <a class="nav-link" href="{{ url_for('sync_status') }}">
+              <i class="bi bi-arrow-repeat me-1"></i>
+              Synchronizacja
+            </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('shipping_settings_view') }}">Ustawienia wysyłki</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('advanced_settings_view') }}">⚙️ Ustawienia zaawansowane</a>
+            <a class="nav-link" href="{{ url_for('settings_view') }}">
+              <i class="bi bi-gear me-1"></i>
+              Ustawienia
+            </a>
           </li>
         </ul>
-        <ul class="navbar-nav ms-auto">
+
+        <ul class="navbar-nav ms-auto align-items-center">
           {% if session.get('logged_in') %}
-          <!-- DROPDOWN WYBORU PROFILU -->
+          <!-- Profile Dropdown -->
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle" href="#" id="profileDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-              Profil: {{ session.get('current_account_name', 'Wybierz...') }}
+            <a class="nav-link dropdown-toggle" href="#" id="profileDropdown" role="button" data-bs-toggle="dropdown">
+              <i class="bi bi-person-circle me-1"></i>
+              {{ session.get('current_account_name', 'Wybierz profil') }}
             </a>
             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
               {% for account in active_accounts %}
               <li>
                 <a class="dropdown-item {% if session.get('current_account_id') == account.id %}active{% endif %}"
                    href="{{ url_for('switch_account', account_id=account.id) }}">
+                  <i class="bi bi-building me-2"></i>
                   {{ account.name }}
                 </a>
               </li>
               {% endfor %}
             </ul>
           </li>
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('logout') }}">Wyloguj</a>
+
+          <!-- Dark Mode Toggle -->
+          <li class="nav-item ms-2">
+            <button class="dark-mode-toggle" id="darkModeToggle" aria-label="Toggle dark mode">
+              <i class="bi bi-moon-stars-fill" id="darkModeIcon"></i>
+            </button>
+          </li>
+
+          <!-- Logout -->
+          <li class="nav-item ms-2">
+            <a class="nav-link" href="{{ url_for('logout') }}">
+              <i class="bi bi-box-arrow-right me-1"></i>
+              Wyloguj
+            </a>
           </li>
           {% else %}
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('login') }}">Zaloguj</a>
+            <a class="nav-link" href="{{ url_for('login') }}">
+              <i class="bi bi-box-arrow-in-right me-1"></i>
+              Zaloguj
+            </a>
           </li>
           {% endif %}
         </ul>
-        <span class="navbar-text">
-          InvoiceTracker - Panel Windykacyjny
-        </span>
       </div>
     </div>
   </nav>
-  <div class="container mt-2">
+
+  <!-- Flash Messages -->
+  <div class="container mt-3">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
-          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-            {{ message }}
+          <div class="alert alert-{{ category }} alert-custom alert-dismissible fade show" role="alert">
+            {% if category == 'success' %}
+              <i class="bi bi-check-circle-fill"></i>
+            {% elif category == 'danger' %}
+              <i class="bi bi-exclamation-triangle-fill"></i>
+            {% elif category == 'warning' %}
+              <i class="bi bi-exclamation-circle-fill"></i>
+            {% elif category == 'info' %}
+              <i class="bi bi-info-circle-fill"></i>
+            {% endif %}
+            <span>{{ message }}</span>
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
           </div>
         {% endfor %}
       {% endif %}
     {% endwith %}
+  </div>
+
+  <!-- Main Content -->
+  <div class="container main-content">
     {% block content %}{% endblock %}
   </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Dark Mode Script -->
+  <script>
+    (function() {
+      // Initialize dark mode from localStorage
+      const darkModeToggle = document.getElementById('darkModeToggle');
+      const darkModeIcon = document.getElementById('darkModeIcon');
+      const htmlElement = document.documentElement;
+
+      // Check for saved preference or default to light mode
+      const currentMode = localStorage.getItem('darkMode') || 'light';
+
+      if (currentMode === 'dark') {
+        htmlElement.classList.add('dark');
+        darkModeIcon.className = 'bi bi-sun-fill';
+      }
+
+      // Toggle dark mode
+      if (darkModeToggle) {
+        darkModeToggle.addEventListener('click', function() {
+          htmlElement.classList.toggle('dark');
+
+          const isDark = htmlElement.classList.contains('dark');
+          localStorage.setItem('darkMode', isDark ? 'dark' : 'light');
+
+          darkModeIcon.className = isDark ? 'bi bi-sun-fill' : 'bi bi-moon-stars-fill';
+        });
+      }
+    })();
+  </script>
 </body>
 </html>

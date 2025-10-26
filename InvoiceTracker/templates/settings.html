@@ -1,0 +1,607 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container mt-4">
+  <!-- Page Header -->
+  <div class="mb-4">
+    <h2 class="page-title">
+      <i class="bi bi-gear me-2"></i>
+      Ustawienia - {{ account.name }}
+    </h2>
+    <p class="text-muted">
+      Zarządzaj wszystkimi ustawieniami profilu w jednym miejscu.
+      <br>
+      <strong>
+        <i class="bi bi-clock-history me-1"></i>
+        Uwaga:
+      </strong>
+      Zmiany aktywne od następnego dnia. Czasy w strefie warszawskiej (UTC+1/+2).
+    </p>
+  </div>
+
+  <form method="post" id="settingsForm">
+
+    <!-- SEKCJA 1: API & INTEGRACJE -->
+    <div class="card-custom mb-4">
+      <div class="card-header-gradient">
+        <h5 class="mb-0">
+          <i class="bi bi-key me-2"></i>
+          API & Integracje
+        </h5>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-8">
+            <label for="infakt_api_key" class="form-label">
+              <i class="bi bi-shield-lock me-1"></i>
+              InFakt API Key
+            </label>
+            <input type="password"
+                   class="form-control"
+                   id="infakt_api_key"
+                   name="infakt_api_key"
+                   value="{{ account.infakt_api_key }}"
+                   placeholder="Wprowadź klucz API z inFakt">
+            <small class="form-text text-muted">
+              <i class="bi bi-lock me-1"></i>
+              Klucz jest szyfrowany przed zapisem do bazy danych
+            </small>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">&nbsp;</label><br>
+            <button type="button"
+                    class="btn btn-secondary"
+                    id="toggleApiKey">
+              <i class="bi bi-eye me-1"></i>
+              Pokaż/Ukryj
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEKCJA 2: WYSYŁKA POWIADOMIEŃ -->
+    <div class="card-custom mb-4">
+      <div class="card-header-gradient">
+        <h5 class="mb-0">
+          <i class="bi bi-envelope me-2"></i>
+          Wysyłka powiadomień
+        </h5>
+      </div>
+      <div class="card-body">
+        <div class="row mb-3">
+          <div class="col-md-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input"
+                     type="checkbox"
+                     id="is_mail_enabled"
+                     name="is_mail_enabled"
+                     {% if schedule_settings.is_mail_enabled %}checked{% endif %}>
+              <label class="form-check-label" for="is_mail_enabled">
+                <strong>Włącz automatyczną wysyłkę powiadomień</strong>
+              </label>
+            </div>
+            <small class="form-text text-muted">
+              Gdy wyłączone, system nie będzie wysyłał emaili dla tego profilu
+            </small>
+          </div>
+        </div>
+
+        <div class="row mb-3" id="mail_time_settings">
+          <div class="col-md-3">
+            <label for="mail_send_hour_warsaw" class="form-label">
+              <i class="bi bi-clock me-1"></i>
+              Godzina (czas lokalny)
+            </label>
+            <input type="number"
+                   class="form-control"
+                   id="mail_send_hour_warsaw"
+                   name="mail_send_hour_warsaw"
+                   value=""
+                   min="0"
+                   max="23"
+                   required>
+            <small class="form-text text-muted">0-23 (czas warszawski)</small>
+          </div>
+
+          <div class="col-md-3">
+            <label for="mail_send_minute_warsaw" class="form-label">
+              <i class="bi bi-stopwatch me-1"></i>
+              Minuta
+            </label>
+            <input type="number"
+                   class="form-control"
+                   id="mail_send_minute_warsaw"
+                   name="mail_send_minute_warsaw"
+                   value=""
+                   min="0"
+                   max="59"
+                   required>
+            <small class="form-text text-muted">0-59</small>
+          </div>
+
+          <div class="col-md-6">
+            <div class="alert alert-info alert-custom mb-0" role="alert">
+              <div>
+                <i class="bi bi-info-circle me-1"></i>
+                <strong>Godzina lokalna:</strong>
+                <span id="mail_warsaw_time_display">-</span>
+                <br>
+                <small>UTC: <span id="mail_utc_time_display">-</span></small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Offsety dni dla etapów wysyłki -->
+        <hr>
+        <h6 class="mb-3">
+          <i class="bi bi-calendar3 me-2"></i>
+          Offsety dni dla powiadomień
+        </h6>
+        <small class="text-muted mb-3 d-block">
+          Określ ile dni przed/po terminie płatności ma być wysłane powiadomienie.<br>
+          Wartość ujemna = przed terminem | Wartość dodatnia = po terminie
+        </small>
+
+        <div class="row">
+          {% for stage_name, offset_days in notification_settings.items() %}
+          <div class="col-md-6 mb-3">
+            <label for="stage_{{ loop.index }}" class="form-label">
+              <i class="bi bi-{{ loop.index }}-circle me-1"></i>
+              {{ stage_name }}
+            </label>
+            <div class="input-group">
+              <input type="number"
+                     class="form-control"
+                     id="stage_{{ loop.index }}"
+                     name="{{ stage_name }}"
+                     value="{{ offset_days }}"
+                     min="-365"
+                     max="365"
+                     required>
+              <span class="input-group-text">dni</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- SEKCJA 3: SYNCHRONIZACJA -->
+    <div class="card-custom mb-4">
+      <div class="card-header-gradient">
+        <h5 class="mb-0">
+          <i class="bi bi-arrow-repeat me-2"></i>
+          Synchronizacja danych
+        </h5>
+      </div>
+      <div class="card-body">
+        <div class="row mb-3">
+          <div class="col-md-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input"
+                     type="checkbox"
+                     id="is_sync_enabled"
+                     name="is_sync_enabled"
+                     {% if schedule_settings.is_sync_enabled %}checked{% endif %}>
+              <label class="form-check-label" for="is_sync_enabled">
+                <strong>Włącz automatyczną synchronizację</strong>
+              </label>
+            </div>
+            <small class="form-text text-muted">
+              Gdy wyłączone, synchronizacja możliwa tylko ręcznie
+            </small>
+          </div>
+        </div>
+
+        <div class="row mb-3" id="sync_time_settings">
+          <div class="col-md-3">
+            <label for="sync_hour_warsaw" class="form-label">
+              <i class="bi bi-clock me-1"></i>
+              Godzina (czas lokalny)
+            </label>
+            <input type="number"
+                   class="form-control"
+                   id="sync_hour_warsaw"
+                   name="sync_hour_warsaw"
+                   value=""
+                   min="0"
+                   max="23"
+                   required>
+            <small class="form-text text-muted">0-23 (czas warszawski)</small>
+          </div>
+
+          <div class="col-md-3">
+            <label for="sync_minute_warsaw" class="form-label">
+              <i class="bi bi-stopwatch me-1"></i>
+              Minuta
+            </label>
+            <input type="number"
+                   class="form-control"
+                   id="sync_minute_warsaw"
+                   name="sync_minute_warsaw"
+                   value=""
+                   min="0"
+                   max="59"
+                   required>
+            <small class="form-text text-muted">0-59</small>
+          </div>
+
+          <div class="col-md-6">
+            <div class="alert alert-info alert-custom mb-0" role="alert">
+              <div>
+                <i class="bi bi-info-circle me-1"></i>
+                <strong>Godzina lokalna:</strong>
+                <span id="sync_warsaw_time_display">-</span>
+                <br>
+                <small>UTC: <span id="sync_utc_time_display">-</span></small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6">
+            <label for="invoice_fetch_days_before" class="form-label">
+              <i class="bi bi-calendar-range me-1"></i>
+              Pobieraj faktury przed terminem płatności
+            </label>
+            <div class="input-group">
+              <input type="number"
+                     class="form-control"
+                     id="invoice_fetch_days_before"
+                     name="invoice_fetch_days_before"
+                     value="{{ schedule_settings.invoice_fetch_days_before }}"
+                     min="1"
+                     max="30"
+                     required>
+              <span class="input-group-text">dni</span>
+            </div>
+            <small class="form-text text-muted">
+              Ile dni przed terminem płatności system ma pobrać fakturę (1-30)
+            </small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEKCJA 4: DANE FIRMOWE W MAILACH -->
+    <div class="card-custom mb-4">
+      <div class="card-header-gradient">
+        <h5 class="mb-0">
+          <i class="bi bi-building me-2"></i>
+          Dane firmowe w szablonach maili
+        </h5>
+      </div>
+      <div class="card-body">
+        <small class="text-muted mb-3 d-block">
+          Te dane będą automatycznie podstawiane w treści wysyłanych powiadomień.
+        </small>
+
+        <div class="row mb-3">
+          <div class="col-md-12">
+            <label for="company_full_name" class="form-label">
+              <i class="bi bi-building me-1"></i>
+              Pełna nazwa firmy (wierzyciel)
+            </label>
+            <input type="text"
+                   class="form-control"
+                   id="company_full_name"
+                   name="company_full_name"
+                   value="{{ account.company_full_name or '' }}"
+                   maxlength="500"
+                   required>
+            <small class="form-text text-muted">
+              Przykład: AQUATEST LABORATORIUM BADAWCZE SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ
+            </small>
+          </div>
+        </div>
+
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label for="company_phone" class="form-label">
+              <i class="bi bi-telephone me-1"></i>
+              Telefon kontaktowy
+            </label>
+            <input type="tel"
+                   class="form-control"
+                   id="company_phone"
+                   name="company_phone"
+                   value="{{ account.company_phone or '' }}"
+                   pattern="[0-9\s\-\+\(\)]{9,20}"
+                   maxlength="20">
+            <small class="form-text text-muted">
+              Przykład: 451089077 lub +48 123 456 789
+            </small>
+          </div>
+
+          <div class="col-md-6">
+            <label for="company_email_contact" class="form-label">
+              <i class="bi bi-envelope-at me-1"></i>
+              Email kontaktowy
+            </label>
+            <input type="email"
+                   class="form-control"
+                   id="company_email_contact"
+                   name="company_email_contact"
+                   value="{{ account.company_email_contact or '' }}"
+                   maxlength="100"
+                   required>
+            <small class="form-text text-muted">
+              Email do kontaktu dla klientów (może być inny niż SMTP)
+            </small>
+          </div>
+        </div>
+
+        <div class="row mb-3">
+          <div class="col-md-12">
+            <label for="company_bank_account" class="form-label">
+              <i class="bi bi-bank me-1"></i>
+              Numer rachunku bankowego
+            </label>
+            <input type="text"
+                   class="form-control"
+                   id="company_bank_account"
+                   name="company_bank_account"
+                   value="{{ account.company_bank_account or '' }}"
+                   pattern="[\d\s]{26,34}"
+                   maxlength="50">
+            <small class="form-text text-muted">
+              Przykład: 27 1140 1124 0000 3980 6300 1001 (26-34 cyfry)
+            </small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEKCJA 5: OPCJE DODATKOWE -->
+    <div class="card-custom mb-4">
+      <div class="card-header-gradient">
+        <h5 class="mb-0">
+          <i class="bi bi-sliders me-2"></i>
+          Opcje dodatkowe
+        </h5>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input"
+                     type="checkbox"
+                     id="auto_close_after_stage5"
+                     name="auto_close_after_stage5"
+                     {% if schedule_settings.auto_close_after_stage5 %}checked{% endif %}>
+              <label class="form-check-label" for="auto_close_after_stage5">
+                <strong>Automatyczne zamykanie sprawy po wysłaniu Stage 5</strong>
+              </label>
+            </div>
+            <small class="form-text text-muted">
+              Gdy włączone, sprawa automatycznie zostanie zamknięta jako "nieopłacona" po wysłaniu ostatniego powiadomienia
+            </small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRZYCISKI -->
+    <div class="row mb-4">
+      <div class="col-md-12">
+        <div class="d-flex gap-2 flex-wrap">
+          <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-save me-1"></i>
+            Zapisz wszystkie ustawienia
+          </button>
+          <a href="{{ url_for('active_cases') }}" class="btn btn-secondary btn-lg">
+            <i class="bi bi-x-lg me-1"></i>
+            Anuluj
+          </a>
+          <button type="button" class="btn btn-warning btn-lg ms-auto" id="resetBtn">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>
+            Przywróć domyślne
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </form>
+
+  <!-- INFO BOX -->
+  <div class="alert alert-info alert-custom" role="alert">
+    <div>
+      <h6 class="alert-heading mb-2">
+        <i class="bi bi-lightbulb me-2"></i>
+        Informacje ważne
+      </h6>
+      <ul class="mb-0">
+        <li><strong>Czasy w strefie warszawskiej</strong> - UTC+1 (zimą) lub UTC+2 (latem)</li>
+        <li><strong>Zmiany aktywne od następnego dnia</strong> - wymaga restartu schedulera</li>
+        <li><strong>Dane firmowe</strong> - używane automatycznie w szablonach maili</li>
+        <li><strong>API Key</strong> - szyfrowany w bazie danych (Fernet)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+// Konwersja UTC ↔ Warsaw Time
+document.addEventListener('DOMContentLoaded', function() {
+  const WARSAW_TZ = 'Europe/Warsaw';
+
+  // Inputs
+  const mailHourWarsawInput = document.getElementById('mail_send_hour_warsaw');
+  const mailMinuteWarsawInput = document.getElementById('mail_send_minute_warsaw');
+  const syncHourWarsawInput = document.getElementById('sync_hour_warsaw');
+  const syncMinuteWarsawInput = document.getElementById('sync_minute_warsaw');
+
+  // Displays
+  const mailWarsawDisplay = document.getElementById('mail_warsaw_time_display');
+  const mailUTCDisplay = document.getElementById('mail_utc_time_display');
+  const syncWarsawDisplay = document.getElementById('sync_warsaw_time_display');
+  const syncUTCDisplay = document.getElementById('sync_utc_time_display');
+
+  // API Key toggle
+  const toggleApiKeyBtn = document.getElementById('toggleApiKey');
+  const apiKeyInput = document.getElementById('infakt_api_key');
+
+  // UTC → Warsaw conversion (dla ładowania strony)
+  function utcToWarsaw(utcHour, utcMinute) {
+    const utc = new Date(Date.UTC(2025, 0, 1, utcHour, utcMinute));
+    const warsawTime = new Intl.DateTimeFormat('pl-PL', {
+      timeZone: WARSAW_TZ,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).format(utc);
+
+    const [h, m] = warsawTime.split(':');
+    return { hour: parseInt(h), minute: parseInt(m) };
+  }
+
+  // Warsaw → UTC conversion (dla wysyłania formularza)
+  function warsawToUTC(warsawHour, warsawMinute) {
+    // Użyj dzisiejszej daty dla poprawnej konwersji (DST)
+    const today = new Date();
+    const warsaw = new Date(today.getFullYear(), today.getMonth(), today.getDate(), warsawHour, warsawMinute);
+
+    // Konwertuj do UTC
+    const utcString = warsaw.toLocaleString('en-US', { timeZone: 'UTC' });
+    const utcDate = new Date(utcString);
+
+    return { hour: utcDate.getHours(), minute: utcDate.getMinutes() };
+  }
+
+  // Inicjalizacja wartości (UTC → Warsaw)
+  // Backend przekazuje UTC, konwertujemy na Warsaw do wyświetlenia
+  const mailUTCHour = {{ schedule_settings.mail_send_hour }};
+  const mailUTCMinute = {{ schedule_settings.mail_send_minute }};
+  const syncUTCHour = {{ schedule_settings.sync_hour }};
+  const syncUTCMinute = {{ schedule_settings.sync_minute }};
+
+  const mailWarsaw = utcToWarsaw(mailUTCHour, mailUTCMinute);
+  const syncWarsaw = utcToWarsaw(syncUTCHour, syncUTCMinute);
+
+  mailHourWarsawInput.value = mailWarsaw.hour;
+  mailMinuteWarsawInput.value = mailWarsaw.minute;
+  syncHourWarsawInput.value = syncWarsaw.hour;
+  syncMinuteWarsawInput.value = syncWarsaw.minute;
+
+  // Update displays
+  function updateTimeDisplays() {
+    const mailWH = parseInt(mailHourWarsawInput.value) || 0;
+    const mailWM = parseInt(mailMinuteWarsawInput.value) || 0;
+    const syncWH = parseInt(syncHourWarsawInput.value) || 0;
+    const syncWM = parseInt(syncMinuteWarsawInput.value) || 0;
+
+    // Warsaw display
+    mailWarsawDisplay.textContent = `${String(mailWH).padStart(2, '0')}:${String(mailWM).padStart(2, '0')} (czas warszawski)`;
+    syncWarsawDisplay.textContent = `${String(syncWH).padStart(2, '0')}:${String(syncWM).padStart(2, '0')} (czas warszawski)`;
+
+    // UTC conversion
+    const mailUTC = warsawToUTC(mailWH, mailWM);
+    const syncUTC = warsawToUTC(syncWH, syncWM);
+
+    mailUTCDisplay.textContent = `${String(mailUTC.hour).padStart(2, '0')}:${String(mailUTC.minute).padStart(2, '0')}`;
+    syncUTCDisplay.textContent = `${String(syncUTC.hour).padStart(2, '0')}:${String(syncUTC.minute).padStart(2, '0')}`;
+  }
+
+  // Event listeners dla live update
+  mailHourWarsawInput.addEventListener('input', updateTimeDisplays);
+  mailMinuteWarsawInput.addEventListener('input', updateTimeDisplays);
+  syncHourWarsawInput.addEventListener('input', updateTimeDisplays);
+  syncMinuteWarsawInput.addEventListener('input', updateTimeDisplays);
+
+  // Initial display update
+  updateTimeDisplays();
+
+  // API Key toggle
+  toggleApiKeyBtn.addEventListener('click', function() {
+    apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
+  });
+
+  // Reset button
+  document.getElementById('resetBtn').addEventListener('click', function() {
+    if (confirm('Czy na pewno chcesz przywrócić domyślne ustawienia? (Nie dotyczy API Key i danych firmowych)')) {
+      // Mail: 07:00 UTC → Warsaw
+      const defaultMailWarsaw = utcToWarsaw(7, 0);
+      mailHourWarsawInput.value = defaultMailWarsaw.hour;
+      mailMinuteWarsawInput.value = defaultMailWarsaw.minute;
+
+      // Sync: 09:00 UTC → Warsaw
+      const defaultSyncWarsaw = utcToWarsaw(9, 0);
+      syncHourWarsawInput.value = defaultSyncWarsaw.hour;
+      syncMinuteWarsawInput.value = defaultSyncWarsaw.minute;
+
+      document.getElementById('invoice_fetch_days_before').value = 1;
+      document.getElementById('is_mail_enabled').checked = true;
+      document.getElementById('is_sync_enabled').checked = true;
+      document.getElementById('auto_close_after_stage5').checked = true;
+
+      updateTimeDisplays();
+    }
+  });
+
+  // Form submit: dodaj ukryte pola z UTC
+  document.getElementById('settingsForm').addEventListener('submit', function(e) {
+    // Konwertuj Warsaw → UTC przed wysłaniem
+    const mailWH = parseInt(mailHourWarsawInput.value) || 0;
+    const mailWM = parseInt(mailMinuteWarsawInput.value) || 0;
+    const syncWH = parseInt(syncHourWarsawInput.value) || 0;
+    const syncWM = parseInt(syncMinuteWarsawInput.value) || 0;
+
+    const mailUTC = warsawToUTC(mailWH, mailWM);
+    const syncUTC = warsawToUTC(syncWH, syncWM);
+
+    // Dodaj ukryte pola z UTC
+    const hiddenMailHour = document.createElement('input');
+    hiddenMailHour.type = 'hidden';
+    hiddenMailHour.name = 'mail_send_hour';
+    hiddenMailHour.value = mailUTC.hour;
+    this.appendChild(hiddenMailHour);
+
+    const hiddenMailMinute = document.createElement('input');
+    hiddenMailMinute.type = 'hidden';
+    hiddenMailMinute.name = 'mail_send_minute';
+    hiddenMailMinute.value = mailUTC.minute;
+    this.appendChild(hiddenMailMinute);
+
+    const hiddenSyncHour = document.createElement('input');
+    hiddenSyncHour.type = 'hidden';
+    hiddenSyncHour.name = 'sync_hour';
+    hiddenSyncHour.value = syncUTC.hour;
+    this.appendChild(hiddenSyncHour);
+
+    const hiddenSyncMinute = document.createElement('input');
+    hiddenSyncMinute.type = 'hidden';
+    hiddenSyncMinute.name = 'sync_minute';
+    hiddenSyncMinute.value = syncUTC.minute;
+    this.appendChild(hiddenSyncMinute);
+  });
+
+  // Toggle opacity based on checkboxes
+  document.getElementById('is_mail_enabled').addEventListener('change', function() {
+    document.getElementById('mail_time_settings').style.opacity = this.checked ? '1' : '0.5';
+  });
+
+  document.getElementById('is_sync_enabled').addEventListener('change', function() {
+    document.getElementById('sync_time_settings').style.opacity = this.checked ? '1' : '0.5';
+  });
+});
+</script>
+
+<style>
+#mail_time_settings,
+#sync_time_settings {
+  transition: opacity 0.3s ease;
+}
+
+input:invalid {
+  border-color: var(--color-danger);
+}
+
+input:valid {
+  border-color: var(--color-success);
+}
+</style>
+
+{% endblock %}

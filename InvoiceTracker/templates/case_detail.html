@@ -1,171 +1,443 @@
 {% extends "layout.html" %}
 {% block content %}
-<h2>Szczegóły Sprawy: {{ case.case_number }}</h2>
 
-<!-- Dane Klienta -->
-<h4>Dane Klienta</h4>
-<p>
-  <strong>ID Klienta:</strong> {{ case.client_id }}<br>
-  <strong>NIP:</strong> {{ invoice.client_nip }}<br>
-  <strong>Nazwa firmy:</strong> {{ case.client_company_name }}<br>
-  <strong>Email:</strong> {{ invoice.client_email if invoice.client_email else "Brak" }}<br>
-  <strong>Adres:</strong>
-  {% if invoice.client_address %}
-    {{ invoice.client_address }}
-  {% else %}
-    Brak
-  {% endif %}
-</p>
+<!-- Page Header -->
+<div class="mb-4">
+  <h2 class="page-title">
+    <i class="bi bi-file-earmark-text me-2"></i>
+    Szczegóły Sprawy: <span class="badge-custom badge-primary">{{ case.case_number }}</span>
+  </h2>
+</div>
 
-<!-- Dane Faktury -->
-<h4>Dane Faktury</h4>
-<table class="table table-bordered table-striped">
-  <thead class="table-dark">
-    <tr>
-      <th>Numer Faktury</th>
-      <th>Data Wystawienia</th>
-      <th>Termin Płatności</th>
-      <th>Kwota (zł)</th>
-      <th>Kwota Zapłacona (zł)</th>
-      <th>Pozostało Do Zapłaty (zł)</th>
-      <th>Waluta</th>
-      <th>Dni od/do terminu</th>
-      <th>Postęp</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>{{ invoice.invoice_number }}</td>
-      <td>
-        {% if invoice.invoice_date %}
-          {{ invoice.invoice_date.strftime('%Y-%m-%d') }}
-        {% else %}
-          Brak
-        {% endif %}
-      </td>
-      <td>
-        {% if invoice.payment_due_date %}
-          {{ invoice.payment_due_date.strftime('%Y-%m-%d') }}
-        {% else %}
-          Brak
-        {% endif %}
-      </td>
-      <td>{{ "%.2f"|format(invoice.gross_price/100 if invoice.gross_price else 0) }} zł</td>
-      <td>
-        {% if invoice.paid_price %}
-          {{ "%.2f"|format(invoice.paid_price/100) }} zł
-        {% else %}
-          0.00 zł
-        {% endif %}
-      </td>
-      <td>
-        {% if left_to_pay %}
-          {{ "%.2f"|format(left_to_pay/100) }} zł
-        {% else %}
-          0.00 zł
-        {% endif %}
-      </td>
-      <td>{{ invoice.currency or "PLN" }}</td>
-      <td>
-        {% if days_display is not none %}
-          {% if days_display < 0 %}
-            -{{ days_display|abs }}
-          {% else %}
-            {{ days_display }}
-          {% endif %}
-        {% else %}
-          -
-        {% endif %}
-      </td>
-      <td>
-        <div class="progress" style="height: 20px;">
-          <div class="progress-bar" role="progressbar"
-               style="width: {{ progress_percent }}%; background-color: #28a745; color: black; min-width: 30px; text-align: center; line-height: 20px;"
-               aria-valuenow="{{ progress_percent }}"
-               aria-valuemin="0" aria-valuemax="100">
-            {{ progress_percent }}%
-          </div>
+<!-- Client Data Card -->
+<div class="card-custom mb-4">
+  <div class="card-body">
+    <h5 class="card-title mb-3">
+      <i class="bi bi-person-vcard me-2"></i>
+      Dane Klienta
+    </h5>
+    <div class="row">
+      <div class="col-md-6">
+        <div class="info-item mb-3">
+          <label class="info-label">
+            <i class="bi bi-person-badge me-1"></i>
+            ID Klienta
+          </label>
+          <div class="info-value">{{ case.client_id }}</div>
         </div>
-      </td>
-    </tr>
-  </tbody>
-</table>
+        <div class="info-item mb-3">
+          <label class="info-label">
+            <i class="bi bi-building me-1"></i>
+            Nazwa firmy
+          </label>
+          <div class="info-value">{{ case.client_company_name }}</div>
+        </div>
+        <div class="info-item mb-3">
+          <label class="info-label">
+            <i class="bi bi-card-list me-1"></i>
+            NIP
+          </label>
+          <div class="info-value">{{ invoice.client_nip }}</div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="info-item mb-3">
+          <label class="info-label">
+            <i class="bi bi-envelope-at me-1"></i>
+            Email
+          </label>
+          <div class="info-value">
+            <span id="email-display-{{ invoice.id }}">
+              {{ invoice.get_effective_email() if invoice.get_effective_email() else "Brak" }}
+              {% if invoice.override_email %}
+                <span class="badge-custom badge-warning ms-2" title="Email nadpisany przez administratora">
+                  <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                  Override
+                </span>
+              {% endif %}
+            </span>
+            <button type="button"
+                    class="btn btn-sm btn-link p-0 ms-2"
+                    onclick="toggleEmailEdit{{ invoice.id }}()"
+                    id="edit-btn-{{ invoice.id }}"
+                    title="Edytuj email">
+              <i class="bi bi-pencil-square"></i>
+            </button>
 
-<div class="mb-3">
-  {% if case.status != "active" %}
-    <a href="{{ url_for('reopen_case', case_number=case.case_number) }}" class="btn btn-sm btn-warning">
-      PRZYWRÓĆ DO SPRAW AKTYWNYCH
-    </a>
-  {% elif invoice.status != "opłacona" %}
-    <a href="{{ url_for('mark_invoice_paid', invoice_id=invoice.id) }}" class="btn btn-sm btn-success">
-      Oznacz jako opłaconą / Zamknij sprawę
-    </a>
-  {% endif %}
-</div>
-
-<!-- Ręczne wysyłanie powiadomień -->
-<h4>Ręczne wysyłanie powiadomień</h4>
-<div class="mb-3">
-  <a href="{{ url_for('send_manual', case_number=case.case_number, stage='przeds') }}" class="btn btn-secondary me-1">1 dzień przed</a>
-  <a href="{{ url_for('send_manual', case_number=case.case_number, stage='7dni') }}" class="btn btn-secondary me-1">7 dni po</a>
-  <a href="{{ url_for('send_manual', case_number=case.case_number, stage='14dni') }}" class="btn btn-secondary me-1">14 dni po</a>
-  <a href="{{ url_for('send_manual', case_number=case.case_number, stage='21dni') }}" class="btn btn-secondary me-1">21 dni po</a>
-  <a href="{{ url_for('send_manual', case_number=case.case_number, stage='30dni') }}" class="btn btn-secondary">30 dni po</a>
-</div>
-
-<!-- Historia wysłanych powiadomień -->
-<h4>Historia wysłanych powiadomień</h4>
-{% if notifications and notifications|length > 0 %}
-  <table class="table table-bordered">
-    <thead class="table-dark">
-      <tr>
-        <th>Data wysłania</th>
-        <th>Etap</th>
-        <th>Temat</th>
-        <th>Treść</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for log in notifications %}
-      <tr>
-        <td>{{ log.sent_at.strftime('%Y-%m-%d %H:%M:%S') if log.sent_at else '' }}</td>
-        <td>{{ log.stage }}</td>
-        <td>{{ log.subject }}</td>
-        <td>
-          <button class="btn btn-sm btn-secondary"
-                  data-bs-toggle="modal"
-                  data-bs-target="#logModal{{ log.id }}">
-            Podgląd
-          </button>
-          <div class="modal fade" id="logModal{{ log.id }}"
-               tabindex="-1"
-               aria-labelledby="logModalLabel{{ log.id }}"
-               aria-hidden="true">
-            <div class="modal-dialog modal-lg">
-              <div class="modal-content">
-                <div class="modal-header">
-                  <h5 class="modal-title" id="logModalLabel{{ log.id }}">{{ log.subject }}</h5>
-                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                  <pre>{{ log.body }}</pre>
-                </div>
-                <div class="modal-footer">
-                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    Zamknij
+            <!-- Email Edit Form -->
+            <div id="email-edit-form-{{ invoice.id }}" style="display:none;" class="mt-2">
+              <form id="form-{{ invoice.id }}" onsubmit="return submitEmailUpdate{{ invoice.id }}(event)">
+                <div class="input-group">
+                  <input type="email"
+                         name="new_email"
+                         class="form-control"
+                         value="{{ invoice.override_email if invoice.override_email else invoice.client_email }}"
+                         placeholder="Nowy email"
+                         id="email-input-{{ invoice.id }}">
+                  <button type="submit" class="btn btn-success">
+                    <i class="bi bi-check-lg me-1"></i>
+                    Zapisz
+                  </button>
+                  <button type="button"
+                          class="btn btn-secondary"
+                          onclick="toggleEmailEdit{{ invoice.id }}()">
+                    <i class="bi bi-x-lg me-1"></i>
+                    Anuluj
                   </button>
                 </div>
+                <small class="text-muted">
+                  <i class="bi bi-info-circle me-1"></i>
+                  Email z API: {{ invoice.client_email if invoice.client_email else "Brak" }}
+                </small>
+              </form>
+            </div>
+
+            <script>
+            function toggleEmailEdit{{ invoice.id }}() {
+              const display = document.getElementById('email-display-{{ invoice.id }}');
+              const form = document.getElementById('email-edit-form-{{ invoice.id }}');
+              const editBtn = document.getElementById('edit-btn-{{ invoice.id }}');
+
+              if (form.style.display === 'none') {
+                display.style.display = 'none';
+                editBtn.style.display = 'none';
+                form.style.display = 'block';
+              } else {
+                display.style.display = 'inline';
+                editBtn.style.display = 'inline';
+                form.style.display = 'none';
+              }
+            }
+
+            async function submitEmailUpdate{{ invoice.id }}(e) {
+              e.preventDefault();
+              const formData = new FormData(e.target);
+
+              try {
+                const response = await fetch('{{ url_for("update_email", invoice_id=invoice.id) }}', {
+                  method: 'POST',
+                  body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                  alert('Email zaktualizowany: ' + data.effective_email);
+                  location.reload();
+                } else {
+                  alert('Błąd: ' + data.message);
+                }
+              } catch (error) {
+                alert('Błąd połączenia: ' + error);
+              }
+              return false;
+            }
+            </script>
+          </div>
+        </div>
+        <div class="info-item mb-3">
+          <label class="info-label">
+            <i class="bi bi-geo-alt me-1"></i>
+            Adres
+          </label>
+          <div class="info-value">
+            {% if invoice.client_address %}
+              {{ invoice.client_address }}
+            {% else %}
+              <span class="text-muted">Brak</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Invoice Data Card -->
+<div class="card-custom mb-4">
+  <div class="card-body">
+    <h5 class="card-title mb-3">
+      <i class="bi bi-receipt me-2"></i>
+      Dane Faktury
+    </h5>
+    <div class="table-responsive">
+      <table class="table-custom">
+        <thead>
+          <tr>
+            <th>
+              <i class="bi bi-hash me-1"></i>
+              Numer Faktury
+            </th>
+            <th>
+              <i class="bi bi-calendar-check me-1"></i>
+              Data Wystawienia
+            </th>
+            <th>
+              <i class="bi bi-calendar-event me-1"></i>
+              Termin Płatności
+            </th>
+            <th>
+              <i class="bi bi-cash me-1"></i>
+              Kwota (zł)
+            </th>
+            <th>
+              <i class="bi bi-cash-coin me-1"></i>
+              Zapłacono (zł)
+            </th>
+            <th>
+              <i class="bi bi-exclamation-circle me-1"></i>
+              Pozostało (zł)
+            </th>
+            <th>
+              <i class="bi bi-currency-exchange me-1"></i>
+              Waluta
+            </th>
+            <th>
+              <i class="bi bi-clock-history me-1"></i>
+              Dni po terminie
+            </th>
+            <th>
+              <i class="bi bi-bar-chart me-1"></i>
+              Postęp
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <span class="badge-custom badge-info">{{ invoice.invoice_number }}</span>
+            </td>
+            <td>
+              {% if invoice.invoice_date %}
+                {{ invoice.invoice_date.strftime('%Y-%m-%d') }}
+              {% else %}
+                <span class="text-muted">Brak</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if invoice.payment_due_date %}
+                {{ invoice.payment_due_date.strftime('%Y-%m-%d') }}
+              {% else %}
+                <span class="text-muted">Brak</span>
+              {% endif %}
+            </td>
+            <td>
+              <strong>{{ "%.2f"|format(invoice.gross_price/100 if invoice.gross_price else 0) }}</strong>
+            </td>
+            <td>
+              {% if invoice.paid_price %}
+                {{ "%.2f"|format(invoice.paid_price/100) }}
+              {% else %}
+                0.00
+              {% endif %}
+            </td>
+            <td>
+              {% if left_to_pay %}
+                <span class="text-danger">
+                  <strong>{{ "%.2f"|format(left_to_pay/100) }}</strong>
+                </span>
+              {% else %}
+                0.00
+              {% endif %}
+            </td>
+            <td>{{ invoice.currency or "PLN" }}</td>
+            <td>
+              {% if days_display is not none %}
+                {% if days_display < 0 %}
+                  <span class="badge-custom badge-info">
+                    <i class="bi bi-clock-history me-1"></i>
+                    -{{ days_display|abs }}
+                  </span>
+                {% elif days_display == 0 %}
+                  <span class="badge-custom badge-warning">
+                    <i class="bi bi-exclamation-circle me-1"></i>
+                    Dzisiaj
+                  </span>
+                {% else %}
+                  <span class="badge-custom badge-danger">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    {{ days_display }}
+                  </span>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="progress-custom">
+                <div class="progress-bar-gradient"
+                     role="progressbar"
+                     style="width: {{ progress_percent }}%;"
+                     aria-valuenow="{{ progress_percent }}"
+                     aria-valuemin="0"
+                     aria-valuemax="100">
+                  {{ progress_percent }}%
+                </div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Case Actions Card -->
+<div class="card-custom mb-4">
+  <div class="card-body">
+    <h5 class="card-title mb-3">
+      <i class="bi bi-gear me-2"></i>
+      Akcje
+    </h5>
+    <div class="d-flex gap-2 flex-wrap">
+      {% if case.status != "active" %}
+        <a href="{{ url_for('reopen_case', case_number=case.case_number) }}" class="btn btn-warning">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>
+          Przywróć do spraw aktywnych
+        </a>
+      {% elif invoice.status != "opłacona" %}
+        <a href="{{ url_for('mark_invoice_paid', invoice_id=invoice.id) }}" class="btn btn-success">
+          <i class="bi bi-check-circle me-1"></i>
+          Oznacz jako opłaconą / Zamknij sprawę
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Manual Notifications Card -->
+<div class="card-custom mb-4">
+  <div class="card-body">
+    <h5 class="card-title mb-3">
+      <i class="bi bi-send me-2"></i>
+      Ręczne wysyłanie powiadomień
+    </h5>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="{{ url_for('send_manual', case_number=case.case_number, stage='przeds') }}"
+         class="btn btn-secondary">
+        <i class="bi bi-1-circle me-1"></i>
+        1 dzień przed
+      </a>
+      <a href="{{ url_for('send_manual', case_number=case.case_number, stage='7dni') }}"
+         class="btn btn-secondary">
+        <i class="bi bi-2-circle me-1"></i>
+        7 dni po
+      </a>
+      <a href="{{ url_for('send_manual', case_number=case.case_number, stage='14dni') }}"
+         class="btn btn-secondary">
+        <i class="bi bi-3-circle me-1"></i>
+        14 dni po
+      </a>
+      <a href="{{ url_for('send_manual', case_number=case.case_number, stage='21dni') }}"
+         class="btn btn-secondary">
+        <i class="bi bi-4-circle me-1"></i>
+        21 dni po
+      </a>
+      <a href="{{ url_for('send_manual', case_number=case.case_number, stage='30dni') }}"
+         class="btn btn-secondary">
+        <i class="bi bi-5-circle me-1"></i>
+        30 dni po
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Notification History Card -->
+<div class="card-custom mb-4">
+  <div class="card-body">
+    <h5 class="card-title mb-3">
+      <i class="bi bi-clock-history me-2"></i>
+      Historia wysłanych powiadomień
+    </h5>
+    {% if notifications and notifications|length > 0 %}
+      <div class="timeline">
+        {% for log in notifications %}
+        <div class="timeline-item">
+          <div class="timeline-marker">
+            <i class="bi bi-envelope-check"></i>
+          </div>
+          <div class="timeline-content">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div>
+                <h6 class="mb-1">
+                  <span class="badge-custom badge-info">{{ log.stage }}</span>
+                  {{ log.subject }}
+                </h6>
+                <small class="text-muted">
+                  <i class="bi bi-calendar3 me-1"></i>
+                  {{ log.sent_at.strftime('%Y-%m-%d %H:%M:%S') if log.sent_at else '' }}
+                </small>
+              </div>
+              <button class="btn btn-sm btn-secondary"
+                      data-bs-toggle="modal"
+                      data-bs-target="#logModal{{ log.id }}">
+                <i class="bi bi-eye me-1"></i>
+                Podgląd
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal for notification preview -->
+        <div class="modal fade" id="logModal{{ log.id }}" tabindex="-1" aria-labelledby="logModalLabel{{ log.id }}" aria-hidden="true">
+          <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" id="logModalLabel{{ log.id }}">
+                  <i class="bi bi-envelope-open me-2"></i>
+                  {{ log.subject }}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <div class="mb-3">
+                  <strong>
+                    <i class="bi bi-tag me-1"></i>
+                    Etap:
+                  </strong>
+                  <span class="badge-custom badge-info">{{ log.stage }}</span>
+                </div>
+                <div class="mb-3">
+                  <strong>
+                    <i class="bi bi-calendar3 me-1"></i>
+                    Data wysłania:
+                  </strong>
+                  {{ log.sent_at.strftime('%Y-%m-%d %H:%M:%S') if log.sent_at else '' }}
+                </div>
+                <div>
+                  <strong>
+                    <i class="bi bi-file-text me-1"></i>
+                    Treść wiadomości:
+                  </strong>
+                  <pre class="mt-2 p-3 rounded" style="background-color: var(--color-bg-secondary); border: 1px solid var(--color-border); max-height: 400px; overflow-y: auto;">{{ log.body }}</pre>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                  <i class="bi bi-x-lg me-1"></i>
+                  Zamknij
+                </button>
               </div>
             </div>
           </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-{% else %}
-  <p>Brak wysłanych powiadomień.</p>
-{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="alert alert-info alert-custom mb-0">
+        <i class="bi bi-info-circle me-2"></i>
+        Brak wysłanych powiadomień.
+      </div>
+    {% endif %}
+  </div>
+</div>
 
-<a href="{{ url_for('active_cases') }}" class="btn btn-primary">Powrót do listy spraw</a>
+<!-- Back Button -->
+<div class="mb-4">
+  <a href="{{ url_for('active_cases') }}" class="btn btn-primary">
+    <i class="bi bi-arrow-left me-1"></i>
+    Powrót do listy spraw
+  </a>
+</div>
+
 {% endblock %}

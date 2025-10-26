@@ -1,17 +1,79 @@
 {% extends "layout.html" %}
 {% block content %}
-<h2>Logowanie</h2>
-<form method="post" class="row g-3">
-  <div class="col-md-6">
-    <label for="username" class="form-label">Nazwa użytkownika:</label>
-    <input type="text" name="username" id="username" class="form-control" required>
+<div class="login-container">
+  <div class="row justify-content-center">
+    <div class="col-md-5 col-lg-4">
+      <div class="card-custom shadow-lg">
+        <div class="card-header-gradient text-center py-4">
+          <i class="bi bi-receipt-cutoff" style="font-size: 3rem;"></i>
+          <h3 class="mb-0 mt-2">InvoiceTracker</h3>
+          <p class="mb-0 mt-1 text-white-50">System Windykacyjny</p>
+        </div>
+        <div class="card-body p-4">
+          <h5 class="card-title text-center mb-4">
+            <i class="bi bi-box-arrow-in-right me-2"></i>
+            Zaloguj się
+          </h5>
+
+          <form method="post">
+            <div class="mb-3">
+              <label for="username" class="form-label">
+                <i class="bi bi-person me-1"></i>
+                Nazwa użytkownika
+              </label>
+              <input type="text"
+                     name="username"
+                     id="username"
+                     class="form-control"
+                     placeholder="Wprowadź nazwę użytkownika"
+                     required
+                     autofocus>
+            </div>
+
+            <div class="mb-4">
+              <label for="password" class="form-label">
+                <i class="bi bi-lock me-1"></i>
+                Hasło
+              </label>
+              <input type="password"
+                     name="password"
+                     id="password"
+                     class="form-control"
+                     placeholder="Wprowadź hasło"
+                     required>
+            </div>
+
+            <div class="d-grid">
+              <button type="submit" class="btn btn-primary btn-lg">
+                <i class="bi bi-box-arrow-in-right me-2"></i>
+                Zaloguj się
+              </button>
+            </div>
+          </form>
+        </div>
+        <div class="card-footer text-center text-muted py-3">
+          <small>
+            <i class="bi bi-shield-lock me-1"></i>
+            Bezpieczne logowanie
+          </small>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="col-md-6">
-    <label for="password" class="form-label">Hasło:</label>
-    <input type="password" name="password" id="password" class="form-control" required>
-  </div>
-  <div class="col-12">
-    <button type="submit" class="btn btn-primary">Zaloguj</button>
-  </div>
-</form>
+</div>
+
+<style>
+.login-container {
+  min-height: 80vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 0;
+}
+
+.card-footer {
+  background-color: var(--color-bg-secondary);
+  border-top: 1px solid var(--color-border);
+}
+</style>
 {% endblock %}

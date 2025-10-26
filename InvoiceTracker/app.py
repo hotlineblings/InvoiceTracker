@@ -304,6 +304,7 @@ def create_app():
             sort_order = request.args.get('sort_order', 'asc')
             page = request.args.get('page', 1, type=int)
             per_page = 100
+            show_unpaid = request.args.get('show_unpaid', '') == '1'
 
             stage_mapping_progress = {
                 "Przypomnienie o zbliżającym się terminie płatności": 1,
@@ -408,6 +409,10 @@ def create_app():
                     or search_query in (c.get('client_email') or '').lower()
                 ]
 
+            # Filtrowanie po statusie "closed_nieoplacone" (tylko nieopłacone)
+            if show_unpaid:
+                cases_list = [c for c in cases_list if c.get('status') == 'closed_nieoplacone']
+
             # Sortowanie
             if cases_list:
                 try:
@@ -448,7 +453,8 @@ def create_app():
                 page=page,
                 per_page=per_page,
                 total_pages=total_pages,
-                total_count=total_count
+                total_count=total_count,
+                show_unpaid_filter=show_unpaid
             )
         except Exception as e:
             log.error(f"General error in completed_cases: {e}", exc_info=True)
@@ -580,12 +586,16 @@ def create_app():
                     st = stage_mapping_progress.get(stage_text, 0)
                     max_stage = max(max_stage, st)
                 progress_val = int((max_stage / 5) * 100)
+                effective_email = inv.get_effective_email() if inv else "Brak"
                 return {
                     'case_number': case_obj.case_number,
                     'client_id': case_obj.client_id,
                     'client_company_name': case_obj.client_company_name,
                     'client_nip': inv.client_nip,
-                    'client_email': inv.client_email if inv.client_email else "Brak",
+                    'client_email': effective_email,
+                    'invoice_id': inv.id,
+                    'override_email': inv.override_email,
+                    'api_email': inv.client_email,
                     'total_debt': total_debt,
                     'days_diff': days_diff,
                     'progress_percent': progress_val,
@@ -675,7 +685,10 @@ def create_app():
             if not inv:
                 flash("Faktura nie znaleziona.", "danger")
                 return redirect(url_for('active_cases'))
-            if not inv.client_email or '@' not in inv.client_email:
+
+            # Użyj effective email (override lub client_email)
+            effective_email = inv.get_effective_email()
+            if not effective_email or '@' not in effective_email:
                 flash("Brak lub niepoprawny email klienta.", "danger")
                 return redirect(url_for('case_detail', case_number=case_number))
             mapped = map_stage(stage)
@@ -699,7 +712,7 @@ def create_app():
                 return redirect(url_for('case_detail', case_number=case_number))
             email_success = False
             email_errors = []
-            emails = [email.strip() for email in inv.client_email.split(',') if email.strip()]
+            emails = [email.strip() for email in effective_email.split(',') if email.strip()]
             for email in emails:
                 try:
                     # MULTI-TENANCY: Używamy send_email_for_account z dedykowanym SMTP
@@ -719,7 +732,7 @@ def create_app():
                 account_id=account_id,
                 client_id=inv.client_id,
                 invoice_number=inv.invoice_number,
-                email_to=inv.client_email,
+                email_to=effective_email,
                 subject=subject,
                 body=body_html,
                 stage=mapped,
@@ -756,6 +769,73 @@ def create_app():
             return redirect(url_for('case_detail', case_number=target_case_num))
         else:
             return redirect(url_for('active_cases'))
+
+    @app.route('/update_email/<int:invoice_id>', methods=['POST'])
+    def update_email(invoice_id):
+        """
+        Endpoint do aktualizacji override_email dla faktury.
+        Umożliwia administratorowi ręczne nadpisanie emaila klienta z API.
+
+        Args:
+            invoice_id (int): ID faktury do aktualizacji
+
+        Form data:
+            new_email (str): Nowy email (może być pusty aby usunąć override)
+
+        Returns:
+            JSON: {"success": bool, "message": str, "effective_email": str}
+        """
+        try:
+            # Sprawdź czy wybrany profil
+            account_id = session.get('current_account_id')
+            if not account_id:
+                return jsonify({"success": False, "message": "Wybierz profil."}), 403
+
+            # Pobierz nowy email z formularza
+            new_email = request.form.get('new_email', '').strip()
+
+            # MULTI-TENANCY: Pobierz fakturę przez JOIN z Case i sprawdź account_id
+            invoice = (
+                Invoice.query
+                .join(Case, Invoice.case_id == Case.id)
+                .filter(Invoice.id == invoice_id)
+                .filter(Case.account_id == account_id)
+                .first()
+            )
+
+            if not invoice:
+                return jsonify({"success": False, "message": "Nie znaleziono faktury lub brak dostępu."}), 404
+
+            # Walidacja emaila (jeśli nie jest pusty)
+            if new_email and '@' not in new_email:
+                return jsonify({"success": False, "message": "Nieprawidłowy format emaila."}), 400
+
+            # Ustaw override_email (pusty string = usuń override, użyj API email)
+            if new_email:
+                invoice.override_email = new_email
+                log.info(f"[update_email] Ustawiono override_email={new_email} dla faktury {invoice.invoice_number} (ID: {invoice_id})")
+            else:
+                invoice.override_email = None
+                log.info(f"[update_email] Usunięto override_email dla faktury {invoice.invoice_number} (ID: {invoice_id})")
+
+            db.session.add(invoice)
+            db.session.commit()
+
+            # Zwróć effective email po aktualizacji
+            effective_email = invoice.get_effective_email()
+
+            return jsonify({
+                "success": True,
+                "message": "Email zaktualizowany pomyślnie.",
+                "effective_email": effective_email,
+                "override_email": invoice.override_email,
+                "client_email": invoice.client_email
+            }), 200
+
+        except Exception as e:
+            log.error(f"[update_email] Błąd aktualizacji emaila dla invoice_id={invoice_id}: {e}", exc_info=True)
+            db.session.rollback()
+            return jsonify({"success": False, "message": f"Błąd serwera: {str(e)}"}), 500
 
     def background_sync(app_context, account_id):
         """
@@ -960,8 +1040,18 @@ def create_app():
                                  date_from=None,
                                  date_to=None)
 
-    @app.route('/shipping_settings', methods=['GET', 'POST'], endpoint='shipping_settings_view')
-    def shipping_settings_view():
+    @app.route('/settings', methods=['GET', 'POST'], endpoint='settings_view')
+    def settings_view():
+        """
+        Zunifikowany panel ustawień łączący:
+        - Ustawienia API (InFakt API Key)
+        - Ustawienia wysyłki powiadomień (offsets dla 5 etapów)
+        - Ustawienia synchronizacji
+        - Dane firmowe (do szablonów maili)
+        - Opcje dodatkowe (auto-close)
+
+        Czas wyświetlany w Europe/Warsaw, przechowywany w UTC.
+        """
         try:
             # Sprawdź czy wybrany profil
             account_id = session.get('current_account_id')
@@ -969,103 +1059,116 @@ def create_app():
                 flash("Wybierz profil.", "warning")
                 return redirect(url_for('select_account'))
 
+            # Załaduj Account
+            account = Account.query.get(account_id)
+            if not account:
+                flash("Nie znaleziono konta.", "danger")
+                return redirect(url_for('select_account'))
+
+            # Załaduj NotificationSettings (offsets dla 5 etapów)
             NotificationSettings.initialize_default_settings(account_id)
-            current_settings = NotificationSettings.get_all_settings(account_id)
-        except Exception as e:
-            log.error(f"Błąd NotificationSettings: {e}. Migracje?", exc_info=True)
-            flash("Błąd ustawień. Administrator.", "danger")
-            current_settings = {}
-        if request.method == 'POST':
-            try:
-                new_settings = {}
-                if not current_settings:
-                    flash("Błąd ładowania ustawień.", "danger")
-                else:
-                    for key in current_settings.keys():
+            notification_settings = NotificationSettings.get_all_settings(account_id)
+
+            # Załaduj AccountScheduleSettings (harmonogramy)
+            schedule_settings = AccountScheduleSettings.get_for_account(account_id)
+
+            if request.method == 'POST':
+                try:
+                    # === SEKCJA 1: API Key ===
+                    api_key = request.form.get('infakt_api_key', '').strip()
+                    if api_key:
+                        account.infakt_api_key = api_key  # Property automatycznie szyfruje
+
+                    # === SEKCJA 2: Wysyłka powiadomień (NotificationSettings) ===
+                    # JavaScript dodaje hidden fields z UTC times: mail_send_hour, mail_send_minute
+                    mail_send_hour_utc = int(request.form.get('mail_send_hour', 7))
+                    mail_send_minute_utc = int(request.form.get('mail_send_minute', 0))
+                    schedule_settings.mail_send_hour = mail_send_hour_utc
+                    schedule_settings.mail_send_minute = mail_send_minute_utc
+                    schedule_settings.is_mail_enabled = request.form.get('is_mail_enabled') == 'on'
+
+                    # Offsets dla 5 etapów powiadomień
+                    new_notification_settings = {}
+                    for stage_key in ['stage_1', 'stage_2', 'stage_3', 'stage_4', 'stage_5']:
                         try:
-                            new_settings[key] = int(request.form.get(key, current_settings[key]))
+                            offset_value = int(request.form.get(stage_key, notification_settings.get(stage_key, 0)))
+                            new_notification_settings[stage_key] = offset_value
                         except (ValueError, TypeError):
-                            flash(f"Zła wartość dla '{key}'.", "warning")
-                            new_settings[key] = current_settings.get(key)
-                    if new_settings:
-                        NotificationSettings.update_settings(account_id, new_settings)
-                        flash("Ustawienia zapisane.", "success")
-                    else:
-                        flash("Brak zmian.", "info")
-            except Exception as e:
-                log.error(f"Błąd zapisu ustawień: {e}", exc_info=True)
-                flash(f"Błąd zapisu: {e}", "danger")
-                db.session.rollback()
-            return redirect(url_for('shipping_settings_view'))
-        return render_template('shipping_settings.html', settings=current_settings)
+                            flash(f"Nieprawidłowa wartość dla {stage_key}.", "warning")
+                            new_notification_settings[stage_key] = notification_settings.get(stage_key, 0)
+
+                    if new_notification_settings:
+                        NotificationSettings.update_settings(account_id, new_notification_settings)
+
+                    # === SEKCJA 3: Synchronizacja ===
+                    # JavaScript dodaje hidden fields: sync_hour, sync_minute
+                    sync_hour_utc = int(request.form.get('sync_hour', 9))
+                    sync_minute_utc = int(request.form.get('sync_minute', 0))
+                    schedule_settings.sync_hour = sync_hour_utc
+                    schedule_settings.sync_minute = sync_minute_utc
+                    schedule_settings.is_sync_enabled = request.form.get('is_sync_enabled') == 'on'
+                    schedule_settings.invoice_fetch_days_before = int(request.form.get('invoice_fetch_days_before', 1))
+
+                    # === SEKCJA 4: Dane firmowe ===
+                    account.company_full_name = request.form.get('company_full_name', '').strip()
+                    account.company_phone = request.form.get('company_phone', '').strip()
+                    account.company_email_contact = request.form.get('company_email_contact', '').strip()
+                    account.company_bank_account = request.form.get('company_bank_account', '').strip()
+
+                    # === SEKCJA 5: Opcje dodatkowe ===
+                    schedule_settings.auto_close_after_stage5 = request.form.get('auto_close_after_stage5') == 'on'
+                    schedule_settings.timezone = 'Europe/Warsaw'  # Stała wartość
+
+                    # Walidacja AccountScheduleSettings
+                    is_valid, errors = schedule_settings.validate()
+                    if not is_valid:
+                        for error in errors:
+                            flash(error, "danger")
+                        return render_template('settings.html',
+                                             account=account,
+                                             notification_settings=notification_settings,
+                                             schedule_settings=schedule_settings)
+
+                    # Zapis do bazy
+                    db.session.add(account)
+                    db.session.add(schedule_settings)
+                    db.session.commit()
+
+                    flash("Wszystkie ustawienia zostały pomyślnie zapisane.", "success")
+                    log.info(f"[settings] Zaktualizowano ustawienia dla konta {account.name} (ID: {account_id})")
+
+                    return redirect(url_for('settings_view'))
+
+                except ValueError as e:
+                    flash(f"Błąd walidacji danych: {e}", "danger")
+                    db.session.rollback()
+                except Exception as e:
+                    flash(f"Błąd zapisu ustawień: {e}", "danger")
+                    log.error(f"[settings] Błąd zapisu dla konta {account_id}: {e}", exc_info=True)
+                    db.session.rollback()
+
+            # GET - renderuj formularz
+            return render_template('settings.html',
+                                 account=account,
+                                 notification_settings=notification_settings,
+                                 schedule_settings=schedule_settings)
+
+        except Exception as e:
+            log.error(f"[settings] Błąd ogólny: {e}", exc_info=True)
+            flash("Wystąpił błąd podczas ładowania ustawień.", "danger")
+            return redirect(url_for('active_cases'))
+
+    @app.route('/shipping_settings', methods=['GET', 'POST'], endpoint='shipping_settings_view')
+    def shipping_settings_view():
+        """Stary endpoint - przekierowanie do nowego zunifikowanego panelu ustawień"""
+        flash("Panel ustawień został przeniesiony do nowej lokalizacji.", "info")
+        return redirect(url_for('settings_view'))
 
     @app.route('/advanced_settings', methods=['GET', 'POST'], endpoint='advanced_settings_view')
     def advanced_settings_view():
-        """
-        Panel zaawansowanych ustawień harmonogramu dla wybranego profilu.
-        Pozwala ustawić:
-        - Godziny wysyłki emaili
-        - Godziny synchronizacji
-        - Termin pobierania faktur
-        """
-        # Sprawdź czy wybrany profil
-        account_id = session.get('current_account_id')
-        if not account_id:
-            flash("Wybierz profil.", "warning")
-            return redirect(url_for('select_account'))
-
-        account = Account.query.get(account_id)
-        if not account:
-            flash("Nie znaleziono konta.", "danger")
-            return redirect(url_for('select_account'))
-
-        # Pobierz lub utwórz ustawienia
-        settings = AccountScheduleSettings.get_for_account(account_id)
-
-        if request.method == 'POST':
-            try:
-                # Walidacja i zapis
-                settings.mail_send_hour = int(request.form.get('mail_send_hour', 7))
-                settings.mail_send_minute = int(request.form.get('mail_send_minute', 0))
-                settings.is_mail_enabled = request.form.get('is_mail_enabled') == 'on'
-
-                settings.sync_hour = int(request.form.get('sync_hour', 9))
-                settings.sync_minute = int(request.form.get('sync_minute', 0))
-                settings.is_sync_enabled = request.form.get('is_sync_enabled') == 'on'
-
-                settings.invoice_fetch_days_before = int(request.form.get('invoice_fetch_days_before', 1))
-                settings.timezone = request.form.get('timezone', 'Europe/Warsaw')
-                settings.auto_close_after_stage5 = request.form.get('auto_close_after_stage5') == 'on'
-
-                # Walidacja
-                is_valid, errors = settings.validate()
-                if not is_valid:
-                    for error in errors:
-                        flash(error, "danger")
-                    return render_template('advanced_settings.html',
-                                         settings=settings,
-                                         account=account)
-
-                # Zapis
-                db.session.add(settings)
-                db.session.commit()
-
-                flash("Ustawienia zapisane pomyślnie. Będą aktywne od jutra.", "success")
-                log.info(f"[advanced_settings] Zaktualizowano ustawienia dla konta {account.name} (ID: {account_id})")
-
-                return redirect(url_for('advanced_settings_view'))
-
-            except ValueError as e:
-                flash(f"Błąd walidacji: {e}", "danger")
-                db.session.rollback()
-            except Exception as e:
-                flash(f"Błąd zapisu ustawień: {e}", "danger")
-                log.error(f"[advanced_settings] Błąd zapisu dla konta {account_id}: {e}", exc_info=True)
-                db.session.rollback()
-
-        return render_template('advanced_settings.html',
-                             settings=settings,
-                             account=account)
+        """Stary endpoint - przekierowanie do nowego zunifikowanego panelu ustawień"""
+        flash("Panel ustawień został przeniesiony do nowej lokalizacji.", "info")
+        return redirect(url_for('settings_view'))
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -1387,6 +1490,117 @@ def create_app():
         print(f"   ✅ Aktywne sprawy: {len(active_cases)}")
         print(f"   {'⚠️' if orphaned else '✅'}  Orphaned invoices: {len(orphaned)}")
         print(f"   📊 Ostatnich synchronizacji: {len(syncs)}")
+        print("\n" + "=" * 80)
+
+    @app.cli.command('sync-smtp-config')
+    def sync_smtp_config_cli():
+        """
+        Synchronizuje konfigurację SMTP z .env do bazy danych.
+        Aktualizuje ustawienia SMTP dla profili Aquatest i Pozytron Szkolenia
+        na podstawie zmiennych środowiskowych z prefiksami.
+
+        CRITICAL: Ten mechanizm zapewnia że każdy profil używa TYLKO swoich
+        dedykowanych ustawień SMTP bez fallback do globalnych.
+        """
+        from InvoiceTracker.models import Account
+
+        print("=" * 80)
+        print("📧 SYNCHRONIZACJA KONFIGURACJI SMTP z .env → Database")
+        print("=" * 80)
+
+        # Definicja mapowania: nazwa profilu → prefiks w .env
+        PROFILE_CONFIGS = {
+            'Aquatest': 'AQUATEST',
+            'Pozytron Szkolenia': 'POZYTRON'
+        }
+
+        updated_count = 0
+        errors = []
+
+        for account_name, env_prefix in PROFILE_CONFIGS.items():
+            print(f"\n{'─' * 80}")
+            print(f"🔧 Profil: {account_name}")
+            print(f"{'─' * 80}")
+
+            # Pobierz konto z bazy
+            account = Account.query.filter_by(name=account_name).first()
+            if not account:
+                error_msg = f"❌ BŁĄD: Nie znaleziono konta '{account_name}' w bazie"
+                print(error_msg)
+                errors.append(error_msg)
+                continue
+
+            print(f"✅ Znaleziono konto: {account.name} (ID: {account.id})")
+
+            # Pobierz zmienne z .env
+            smtp_server = os.getenv(f'{env_prefix}_SMTP_SERVER')
+            smtp_port = os.getenv(f'{env_prefix}_SMTP_PORT')
+            smtp_username = os.getenv(f'{env_prefix}_SMTP_USERNAME')
+            smtp_password = os.getenv(f'{env_prefix}_SMTP_PASSWORD')
+            email_from = os.getenv(f'{env_prefix}_EMAIL_FROM')
+
+            # Walidacja - sprawdź czy wszystkie wymagane zmienne są zdefiniowane
+            missing_vars = []
+            if not smtp_server:
+                missing_vars.append(f'{env_prefix}_SMTP_SERVER')
+            if not smtp_port:
+                missing_vars.append(f'{env_prefix}_SMTP_PORT')
+            if not smtp_username:
+                missing_vars.append(f'{env_prefix}_SMTP_USERNAME')
+            if not smtp_password:
+                missing_vars.append(f'{env_prefix}_SMTP_PASSWORD')
+            if not email_from:
+                missing_vars.append(f'{env_prefix}_EMAIL_FROM')
+
+            if missing_vars:
+                error_msg = f"❌ BŁĄD: Brakujące zmienne środowiskowe: {', '.join(missing_vars)}"
+                print(error_msg)
+                errors.append(error_msg)
+                continue
+
+            # Wyświetl zmiany
+            print(f"\n📝 Zmiany do zastosowania:")
+            print(f"   • SMTP Server:   {smtp_server}")
+            print(f"   • SMTP Port:     {smtp_port}")
+            print(f"   • SMTP Username: {smtp_username}")
+            print(f"   • SMTP Password: {'*' * len(smtp_password)} (zaszyfrowane)")
+            print(f"   • Email From:    {email_from}")
+
+            # Aktualizuj ustawienia
+            try:
+                account.smtp_server = smtp_server
+                account.smtp_port = int(smtp_port)
+                account.smtp_username = smtp_username  # Automatycznie szyfrowane przez setter
+                account.smtp_password = smtp_password  # Automatycznie szyfrowane przez setter
+                account.email_from = email_from
+
+                db.session.add(account)
+                db.session.commit()
+
+                print(f"\n✅ Pomyślnie zaktualizowano konfigurację SMTP dla {account_name}")
+                updated_count += 1
+
+            except Exception as e:
+                db.session.rollback()
+                error_msg = f"❌ BŁĄD podczas aktualizacji {account_name}: {str(e)}"
+                print(error_msg)
+                errors.append(error_msg)
+
+        # Podsumowanie
+        print("\n" + "=" * 80)
+        print("📊 PODSUMOWANIE:")
+        print("=" * 80)
+        print(f"   ✅ Zaktualizowane profile: {updated_count}/{len(PROFILE_CONFIGS)}")
+
+        if errors:
+            print(f"\n   ❌ Błędy ({len(errors)}):")
+            for error in errors:
+                print(f"      {error}")
+        else:
+            print("\n   🎉 Synchronizacja przebiegła bez błędów!")
+            print("\n   ⚠️  UWAGA: Każdy profil używa TYLKO swoich dedykowanych ustawień SMTP.")
+            print("   ⚠️  Brak mechanizmu fallback do globalnych ustawień.")
+
         print("\n" + "=" * 80)
 
     return app

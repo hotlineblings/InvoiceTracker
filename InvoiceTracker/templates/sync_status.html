@@ -2,92 +2,178 @@
 
 {% block content %}
 <div class="container-fluid mt-2">
-  <h2 class="mb-4">📊 Panel Monitorowania Synchronizacji</h2>
+  <!-- Page Header -->
+  <div class="mb-4">
+    <h2 class="page-title">
+      <i class="bi bi-arrow-repeat me-2"></i>
+      Panel Monitorowania Synchronizacji
+    </h2>
+  </div>
 
   <!-- FILTROWANIE PO DACIE -->
-  <div class="card mb-4">
-    <div class="card-header bg-light">
-      <h5 class="mb-0">🔍 Filtrowanie</h5>
-    </div>
+  <div class="card-custom mb-4">
     <div class="card-body">
+      <h5 class="card-title mb-3">
+        <i class="bi bi-funnel me-2"></i>
+        Filtrowanie
+      </h5>
       <form method="GET" class="row g-3">
         <div class="col-md-3">
-          <label for="date_from" class="form-label">Od:</label>
-          <input type="date" class="form-control" id="date_from" name="date_from"
+          <label for="date_from" class="form-label">
+            <i class="bi bi-calendar-event me-1"></i>
+            Od:
+          </label>
+          <input type="date"
+                 class="form-control"
+                 id="date_from"
+                 name="date_from"
                  value="{% if date_from %}{{ date_from.strftime('%Y-%m-%d') }}{% endif %}">
         </div>
 
         <div class="col-md-3">
-          <label for="date_to" class="form-label">Do:</label>
-          <input type="date" class="form-control" id="date_to" name="date_to"
+          <label for="date_to" class="form-label">
+            <i class="bi bi-calendar-check me-1"></i>
+            Do:
+          </label>
+          <input type="date"
+                 class="form-control"
+                 id="date_to"
+                 name="date_to"
                  value="{% if date_to %}{{ date_to.strftime('%Y-%m-%d') }}{% endif %}">
         </div>
 
-        <div class="col-md-6 d-flex align-items-end">
-          <button type="submit" class="btn btn-primary me-2">Filtruj</button>
-          <button type="submit" name="preset" value="today" class="btn btn-outline-secondary me-2">Dziś</button>
-          <button type="submit" name="preset" value="7days" class="btn btn-outline-secondary me-2">7 dni</button>
-          <button type="submit" name="preset" value="30days" class="btn btn-outline-secondary me-2">30 dni</button>
-          <a href="{{ url_for('sync_status') }}" class="btn btn-outline-danger">Wyczyść</a>
+        <div class="col-md-6 d-flex align-items-end gap-2 flex-wrap">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-search me-1"></i>
+            Filtruj
+          </button>
+          <button type="submit" name="preset" value="today" class="btn btn-secondary">
+            <i class="bi bi-calendar-day me-1"></i>
+            Dziś
+          </button>
+          <button type="submit" name="preset" value="7days" class="btn btn-secondary">
+            <i class="bi bi-calendar-week me-1"></i>
+            7 dni
+          </button>
+          <button type="submit" name="preset" value="30days" class="btn btn-secondary">
+            <i class="bi bi-calendar-month me-1"></i>
+            30 dni
+          </button>
+          <a href="{{ url_for('sync_status') }}" class="btn btn-danger">
+            <i class="bi bi-x-circle me-1"></i>
+            Wyczyść
+          </a>
         </div>
       </form>
     </div>
   </div>
 
   <!-- TABELA SYNCHRONIZACJI -->
-  <div class="table-responsive">
-    <table class="table table-bordered table-striped table-hover">
-      <thead class="table-dark">
-        <tr>
-          <th style="width: 5%;">ID</th>
-          <th style="width: 15%;">Typ synchronizacji</th>
-          <th style="width: 10%;">Nowe Sprawy</th>
-          <th style="width: 12%;">Opłacone Sprawy</th>
-          <th style="width: 10%;">Wywołania API</th>
-          <th style="width: 10%;">Czas (s)</th>
-          <th style="width: 18%;">Data i godzina (PL)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in statuses %}
-        <tr>
-          <td>{{ s.id }}</td>
-          <td>
-            <span class="badge {% if s.sync_type == 'full' %}bg-success{% elif s.sync_type == 'new' %}bg-primary{% else %}bg-secondary{% endif %}">
-              {{ SYNC_TYPE_DISPLAY.get(s.sync_type, s.sync_type) }}
-            </span>
-          </td>
-          <td class="text-center">{{ s.new_cases or 0 }}</td>
-          <td class="text-center">{{ s.closed_cases or 0 }}</td>
-          <td class="text-center">{{ s.api_calls or 0 }}</td>
-          <td class="text-center">
-            <span class="{% if s.duration > 30 %}text-danger fw-bold{% elif s.duration > 15 %}text-warning fw-semibold{% else %}text-success{% endif %}">
-              {{ "%.2f"|format(s.duration) }}
-            </span>
-          </td>
-          <td>
-            {{ s.local_timestamp.strftime('%Y-%m-%d %H:%M:%S') if s.local_timestamp else s.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
-            <small class="text-muted">(PL)</small>
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="7" class="text-center text-muted">
-            Brak rekordów synchronizacji {% if date_from or date_to %}w wybranym okresie{% endif %}.
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="card-custom mb-4">
+    <div class="table-responsive">
+      <table class="table-custom">
+        <thead>
+          <tr>
+            <th style="width: 5%;">
+              <i class="bi bi-hash me-1"></i>
+              ID
+            </th>
+            <th style="width: 15%;">
+              <i class="bi bi-tag me-1"></i>
+              Typ synchronizacji
+            </th>
+            <th style="width: 10%;">
+              <i class="bi bi-file-earmark-plus me-1"></i>
+              Nowe Sprawy
+            </th>
+            <th style="width: 12%;">
+              <i class="bi bi-file-earmark-check me-1"></i>
+              Opłacone Sprawy
+            </th>
+            <th style="width: 10%;">
+              <i class="bi bi-cloud-arrow-up me-1"></i>
+              Wywołania API
+            </th>
+            <th style="width: 10%;">
+              <i class="bi bi-stopwatch me-1"></i>
+              Czas (s)
+            </th>
+            <th style="width: 18%;">
+              <i class="bi bi-calendar3 me-1"></i>
+              Data i godzina (PL)
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in statuses %}
+          <tr>
+            <td>{{ s.id }}</td>
+            <td>
+              <span class="badge-custom {% if s.sync_type == 'full' %}badge-success{% elif s.sync_type == 'new' %}badge-primary{% else %}badge-secondary{% endif %}">
+                {{ SYNC_TYPE_DISPLAY.get(s.sync_type, s.sync_type) }}
+              </span>
+            </td>
+            <td class="text-center">
+              {% if s.new_cases and s.new_cases > 0 %}
+                <span class="badge-custom badge-info">{{ s.new_cases }}</span>
+              {% else %}
+                <span class="text-muted">0</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {% if s.closed_cases and s.closed_cases > 0 %}
+                <span class="badge-custom badge-success">{{ s.closed_cases }}</span>
+              {% else %}
+                <span class="text-muted">0</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <span class="text-muted">{{ s.api_calls or 0 }}</span>
+            </td>
+            <td class="text-center">
+              <span class="{% if s.duration > 30 %}text-danger fw-bold{% elif s.duration > 15 %}text-warning fw-semibold{% else %}text-success{% endif %}">
+                {{ "%.2f"|format(s.duration) }}
+              </span>
+            </td>
+            <td>
+              <i class="bi bi-clock me-1"></i>
+              {{ s.local_timestamp.strftime('%Y-%m-%d %H:%M:%S') if s.local_timestamp else s.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+              <small class="text-muted">(PL)</small>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7" class="text-center">
+              <div class="alert alert-info alert-custom mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                Brak rekordów synchronizacji {% if date_from or date_to %}w wybranym okresie{% endif %}.
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <!-- PAGINACJA -->
   {% if pagination and pagination.pages > 1 %}
-  <nav aria-label="Nawigacja strony" class="mt-3">
+  <div class="pagination-info mb-3">
+    <p>
+      <i class="bi bi-file-earmark-text me-1"></i>
+      Strona <strong>{{ pagination.page }}</strong> z <strong>{{ pagination.pages }}</strong>
+      (łącznie <strong>{{ pagination.total }}</strong> rekordów)
+    </p>
+  </div>
+
+  <nav aria-label="Nawigacja strony">
     <ul class="pagination justify-content-center">
       <!-- Poprzednia -->
       <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-        <a class="page-link" href="?page={{ pagination.prev_num }}{% if date_from %}&date_from={{ date_from.strftime('%Y-%m-%d') }}{% endif %}{% if date_to %}&date_to={{ date_to.strftime('%Y-%m-%d') }}{% endif %}">
+        <a class="page-link"
+           href="?page={{ pagination.prev_num }}{% if date_from %}&date_from={{ date_from.strftime('%Y-%m-%d') }}{% endif %}{% if date_to %}&date_to={{ date_to.strftime('%Y-%m-%d') }}{% endif %}"
+           title="Poprzednia strona">
+          <i class="bi bi-chevron-left"></i>
           Poprzednia
         </a>
       </li>
@@ -96,7 +182,8 @@
       {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
         {% if page_num %}
           <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
-            <a class="page-link" href="?page={{ page_num }}{% if date_from %}&date_from={{ date_from.strftime('%Y-%m-%d') }}{% endif %}{% if date_to %}&date_to={{ date_to.strftime('%Y-%m-%d') }}{% endif %}">
+            <a class="page-link"
+               href="?page={{ page_num }}{% if date_from %}&date_from={{ date_from.strftime('%Y-%m-%d') }}{% endif %}{% if date_to %}&date_to={{ date_to.strftime('%Y-%m-%d') }}{% endif %}">
               {{ page_num }}
             </a>
           </li>
@@ -107,60 +194,24 @@
 
       <!-- Następna -->
       <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-        <a class="page-link" href="?page={{ pagination.next_num }}{% if date_from %}&date_from={{ date_from.strftime('%Y-%m-%d') }}{% endif %}{% if date_to %}&date_to={{ date_to.strftime('%Y-%m-%d') }}{% endif %}">
+        <a class="page-link"
+           href="?page={{ pagination.next_num }}{% if date_from %}&date_from={{ date_from.strftime('%Y-%m-%d') }}{% endif %}{% if date_to %}&date_to={{ date_to.strftime('%Y-%m-%d') }}{% endif %}"
+           title="Następna strona">
           Następna
+          <i class="bi bi-chevron-right"></i>
         </a>
       </li>
     </ul>
-
-    <p class="text-center text-muted">
-      Strona {{ pagination.page }} z {{ pagination.pages }} (łącznie {{ pagination.total }} rekordów)
-    </p>
   </nav>
   {% endif %}
 
   <!-- PRZYCISK POWROTU -->
   <div class="mt-4">
-    <a href="{{ url_for('active_cases') }}" class="btn btn-primary">◀ Powrót do panelu głównego</a>
+    <a href="{{ url_for('active_cases') }}" class="btn btn-primary">
+      <i class="bi bi-arrow-left me-1"></i>
+      Powrót do panelu głównego
+    </a>
   </div>
 </div>
 
-<style>
-/* Badge styling */
-.badge {
-  font-size: 0.85rem;
-  padding: 0.4em 0.6em;
-}
-
-/* Wyrównanie tekstów */
-.text-center {
-  text-align: center;
-}
-
-/* Paginacja */
-.pagination .page-item.active .page-link {
-  background-color: #0d6efd;
-  border-color: #0d6efd;
-}
-
-.pagination .page-link {
-  color: #0d6efd;
-}
-
-.pagination .page-link:hover {
-  background-color: #e7f1ff;
-}
-
-/* Tabela - responsywność */
-@media (max-width: 768px) {
-  table {
-    font-size: 0.85rem;
-  }
-
-  .badge {
-    font-size: 0.75rem;
-    padding: 0.3em 0.5em;
-  }
-}
-</style>
 {% endblock %}

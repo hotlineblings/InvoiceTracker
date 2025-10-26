@@ -51,6 +51,7 @@ class Invoice(db.Model):
     client_id = db.Column(db.String(50))
     client_company_name = db.Column(db.String(200))
     client_email = db.Column(db.String(100))
+    override_email = db.Column(db.String(100), nullable=True)  # Ręcznie ustawiony email przez admina
     client_nip = db.Column(db.String(50))
     client_address = db.Column(db.String(255))
     currency = db.Column(db.String(10))
@@ -63,6 +64,14 @@ class Invoice(db.Model):
     tax_price = db.Column(db.Integer)
     left_to_pay = db.Column(db.Integer)
     case_id = db.Column(db.Integer, db.ForeignKey('case.id'), nullable=True)
+
+    def get_effective_email(self):
+        """
+        Zwraca email do użycia dla powiadomień:
+        - Jeśli administrator ustawił override_email, użyj go
+        - W przeciwnym razie użyj client_email z API
+        """
+        return self.override_email if self.override_email else self.client_email
 
     def __repr__(self):
         return f'<Invoice {self.invoice_number} for client {self.client_id}>'
@@ -201,6 +210,12 @@ class Account(db.Model):
     _smtp_username_encrypted = db.Column('smtp_username', db.LargeBinary, nullable=False)
     _smtp_password_encrypted = db.Column('smtp_password', db.LargeBinary, nullable=False)
     _email_from = db.Column('email_from', db.String(200), nullable=False)
+
+    # Company details for email templates (niezaszyfrowane)
+    company_full_name = db.Column(db.String(500), nullable=True)
+    company_phone = db.Column(db.String(20), nullable=True)
+    company_email_contact = db.Column(db.String(100), nullable=True)
+    company_bank_account = db.Column(db.String(50), nullable=True)
 
     # Status
     is_active = db.Column(db.Boolean, default=True, nullable=False)

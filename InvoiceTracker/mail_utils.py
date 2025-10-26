@@ -50,7 +50,14 @@ def generate_email(stage, invoice, account):
     else:
         stage_3_date = stage_4_date = stage_5_date = "Brak"
 
+    # Dane wierzyciela z Account (dynamiczne per profil)
+    creditor_name = account.company_full_name or "FIRMA"
+    creditor_phone = account.company_phone or "XXX XXX XXX"
+    creditor_email = account.company_email_contact or account.email_from
+    creditor_bank = account.company_bank_account or "BRAK RACHUNKU"
+
     body_html = template["body_html"].format(
+        # Dane klienta (dłużnika) z faktury
         company_name=invoice.client_company_name or "",
         due_date=due_date_str,
         case_number=invoice.invoice_number,
@@ -61,6 +68,11 @@ def generate_email(stage, invoice, account):
         debt_amount=debt_amount,
         stage_3_date=stage_3_date,
         stage_4_date=stage_4_date,
-        stage_5_date=stage_5_date
+        stage_5_date=stage_5_date,
+        # Dane wierzyciela z Account
+        creditor_name=creditor_name,
+        creditor_phone=creditor_phone,
+        creditor_email=creditor_email,
+        creditor_bank_account=creditor_bank
     )
     return subject, body_html

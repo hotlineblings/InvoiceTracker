@@ -1,40 +1,142 @@
 {% extends "layout.html" %}
 
 {% block content %}
-<div class="row justify-content-center mt-5">
-  <div class="col-md-6">
-    <div class="card shadow">
-      <div class="card-header bg-primary text-white">
-        <h4 class="mb-0">Wybierz Profil</h4>
-      </div>
-      <div class="card-body">
-        <p class="text-muted">Wybierz profil, z którym chcesz pracować:</p>
-        <div class="list-group">
-          {% for account in accounts %}
-          <a href="{{ url_for('switch_account', account_id=account.id) }}"
-             class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
-            <div>
-              <h5 class="mb-1">{{ account.name }}</h5>
-              <small class="text-muted">ID: {{ account.id }} |
-                {% if account.is_active %}
-                  <span class="badge bg-success">Aktywny</span>
-                {% else %}
-                  <span class="badge bg-secondary">Nieaktywny</span>
-                {% endif %}
-              </small>
-            </div>
-            <span class="badge bg-primary rounded-pill">Wybierz</span>
-          </a>
-          {% endfor %}
+<div class="profile-select-container">
+  <div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+      <div class="card-custom shadow-lg">
+        <div class="card-header-gradient text-center py-4">
+          <i class="bi bi-person-circle" style="font-size: 3rem;"></i>
+          <h3 class="mb-0 mt-2">Wybierz Profil</h3>
+          <p class="mb-0 mt-1 text-white-50">Przełącz się między różnymi profilami firmy</p>
         </div>
+        <div class="card-body p-4">
+          <p class="text-muted mb-4 text-center">
+            <i class="bi bi-info-circle me-1"></i>
+            Wybierz profil, z którym chcesz pracować:
+          </p>
 
-        {% if not accounts %}
-        <div class="alert alert-warning mt-3" role="alert">
-          Brak dostępnych profili. Skontaktuj się z administratorem.
+          {% if accounts %}
+          <div class="profile-list">
+            {% for account in accounts %}
+            <a href="{{ url_for('switch_account', account_id=account.id) }}"
+               class="profile-card">
+              <div class="profile-card-icon">
+                <i class="bi bi-building"></i>
+              </div>
+              <div class="profile-card-content">
+                <h5 class="profile-card-title">{{ account.name }}</h5>
+                <div class="profile-card-meta">
+                  <small class="text-muted">
+                    <i class="bi bi-hash me-1"></i>
+                    ID: {{ account.id }}
+                  </small>
+                  {% if account.is_active %}
+                    <span class="badge-custom badge-success ms-2">
+                      <i class="bi bi-check-circle me-1"></i>
+                      Aktywny
+                    </span>
+                  {% else %}
+                    <span class="badge-custom badge-secondary ms-2">
+                      <i class="bi bi-x-circle me-1"></i>
+                      Nieaktywny
+                    </span>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="profile-card-action">
+                <i class="bi bi-chevron-right"></i>
+              </div>
+            </a>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="alert alert-warning alert-custom" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <span>Brak dostępnych profili. Skontaktuj się z administratorem.</span>
+          </div>
+          {% endif %}
         </div>
-        {% endif %}
       </div>
     </div>
   </div>
 </div>
+
+<style>
+.profile-select-container {
+  min-height: 80vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 0;
+}
+
+.profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  background-color: var(--color-bg-secondary);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  color: var(--color-text-primary);
+  transition: all var(--transition-fast);
+}
+
+.profile-card:hover {
+  background-color: var(--color-bg-tertiary);
+  border-color: var(--color-primary);
+  transform: translateX(4px);
+  box-shadow: var(--shadow-md);
+}
+
+.profile-card-icon {
+  width: 3.5rem;
+  height: 3.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary-gradient);
+  color: white;
+  border-radius: var(--radius-lg);
+  font-size: 1.75rem;
+  flex-shrink: 0;
+}
+
+.profile-card-content {
+  flex: 1;
+}
+
+.profile-card-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.profile-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.profile-card-action {
+  font-size: 1.5rem;
+  color: var(--color-text-muted);
+  transition: all var(--transition-fast);
+}
+
+.profile-card:hover .profile-card-action {
+  color: var(--color-primary);
+  transform: translateX(4px);
+}
+</style>
 {% endblock %}
