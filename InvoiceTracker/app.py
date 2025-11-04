@@ -1089,13 +1089,13 @@ def create_app():
 
                     # Offsets dla 5 etapów powiadomień
                     new_notification_settings = {}
-                    for stage_key in ['stage_1', 'stage_2', 'stage_3', 'stage_4', 'stage_5']:
+                    for stage_name, current_offset in notification_settings.items():
                         try:
-                            offset_value = int(request.form.get(stage_key, notification_settings.get(stage_key, 0)))
-                            new_notification_settings[stage_key] = offset_value
+                            offset_value = int(request.form.get(stage_name, current_offset))
+                            new_notification_settings[stage_name] = offset_value
                         except (ValueError, TypeError):
-                            flash(f"Nieprawidłowa wartość dla {stage_key}.", "warning")
-                            new_notification_settings[stage_key] = notification_settings.get(stage_key, 0)
+                            flash(f"Nieprawidłowa wartość dla {stage_name}.", "warning")
+                            new_notification_settings[stage_name] = current_offset
 
                     if new_notification_settings:
                         NotificationSettings.update_settings(account_id, new_notification_settings)
@@ -1602,6 +1602,69 @@ def create_app():
             print("   ⚠️  Brak mechanizmu fallback do globalnych ustawień.")
 
         print("\n" + "=" * 80)
+
+    @app.cli.command('verify-notification-settings')
+    def verify_notification_settings_cli():
+        """
+        Weryfikuje i naprawia ustawienia NotificationSettings dla wszystkich profili.
+        Upewnia się że oba profile (Aquatest i Pozytron) mają identyczne 5 ustawień.
+        """
+        from InvoiceTracker.models import Account, NotificationSettings
+
+        print("=" * 80)
+        print("🔧 WERYFIKACJA I NAPRAWA NOTIFICATIONSETTINGS")
+        print("=" * 80)
+
+        # Pobierz wszystkie aktywne konta
+        accounts = Account.query.filter_by(is_active=True).all()
+
+        if not accounts:
+            print("\n❌ Brak aktywnych kont w bazie")
+            return
+
+        print(f"\nZnaleziono {len(accounts)} aktywnych kont")
+
+        # Sprawdź każde konto
+        for account in accounts:
+            print(f"\n{'─' * 80}")
+            print(f"📋 Profil: {account.name} (ID: {account.id})")
+            print(f"{'─' * 80}")
+
+            # Sprawdź istniejące ustawienia
+            existing_settings = NotificationSettings.query.filter_by(account_id=account.id).all()
+            print(f"\nIstniejące ustawienia: {len(existing_settings)}")
+
+            if existing_settings:
+                for setting in existing_settings:
+                    print(f"  - \"{setting.stage_name}\": {setting.offset_days} dni (ID: {setting.id})")
+
+            # Zainicjalizuj domyślne ustawienia jeśli brak
+            if len(existing_settings) < 5:
+                print(f"\n⚠️  Wykryto {len(existing_settings)}/5 ustawień - inicjalizacja brakujących...")
+                NotificationSettings.initialize_default_settings(account.id)
+
+                # Pobierz ponownie po inicjalizacji
+                updated_settings = NotificationSettings.query.filter_by(account_id=account.id).all()
+                print(f"✅ Po inicjalizacji: {len(updated_settings)}/5 ustawień")
+
+                for setting in updated_settings:
+                    print(f"  - \"{setting.stage_name}\": {setting.offset_days} dni")
+            else:
+                print("✅ Wszystkie 5 ustawień obecne")
+
+        # Podsumowanie
+        print("\n" + "=" * 80)
+        print("📊 PODSUMOWANIE:")
+        print("=" * 80)
+
+        for account in accounts:
+            settings_count = NotificationSettings.query.filter_by(account_id=account.id).count()
+            status = "✅" if settings_count == 5 else "⚠️"
+            print(f"  {status} {account.name}: {settings_count}/5 ustawień")
+
+        print("\n" + "=" * 80)
+        print("✅ Weryfikacja zakończona")
+        print("=" * 80)
 
     return app
 
