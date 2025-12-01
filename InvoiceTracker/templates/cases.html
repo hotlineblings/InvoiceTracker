@@ -8,7 +8,7 @@
     Lista Spraw Windykacyjnych (Aktywne)
   </h2>
   <div>
-    <a href="{{ url_for('manual_sync') }}" class="btn btn-info">
+    <a href="{{ url_for('sync.manual_sync') }}" class="btn btn-info">
       <i class="bi bi-arrow-clockwise me-1"></i>
       Ręcznie Synchronizuj
     </a>
@@ -156,13 +156,13 @@
         {% for c in cases %}
         <tr>
           <td>
-            <a href="{{ url_for('case_detail', case_number=c.case_number) }}" class="badge-custom badge-primary badge-clickable">
+            <a href="{{ url_for('cases.case_detail', case_number=c.case_number) }}" class="badge-custom badge-primary badge-clickable">
               {{ c.case_number }}
             </a>
           </td>
           <td>{{ c.client_id }}</td>
           <td>
-            <a href="{{ url_for('client_cases', client_id=c.client_id) }}" class="link-primary">
+            <a href="{{ url_for('cases.client_cases', client_id=c.client_id) }}" class="link-primary">
               <i class="bi bi-box-arrow-up-right me-1"></i>
               {{ c.client_company_name }}
             </a>
@@ -234,14 +234,14 @@
     {% if page > 1 %}
       <li class="page-item">
         <a class="page-link"
-           href="{{ url_for('active_cases', page=1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
+           href="{{ url_for('cases.active_cases', page=1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
            title="Pierwsza strona">
           <i class="bi bi-chevron-bar-left"></i>
         </a>
       </li>
       <li class="page-item">
         <a class="page-link"
-           href="{{ url_for('active_cases', page=page-1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
+           href="{{ url_for('cases.active_cases', page=page-1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
            title="Poprzednia strona">
           <i class="bi bi-chevron-left"></i>
         </a>
@@ -268,7 +268,7 @@
     {% for p in range(start_page, end_page + 1) %}
       <li class="page-item {% if p == page %}active{% endif %}">
         <a class="page-link"
-           href="{{ url_for('active_cases', page=p, search=search_query, sort_by=sort_by, sort_order=sort_order) }}">
+           href="{{ url_for('cases.active_cases', page=p, search=search_query, sort_by=sort_by, sort_order=sort_order) }}">
           {{ p }}
         </a>
       </li>
@@ -277,14 +277,14 @@
     {% if page < total_pages %}
       <li class="page-item">
         <a class="page-link"
-           href="{{ url_for('active_cases', page=page+1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
+           href="{{ url_for('cases.active_cases', page=page+1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
            title="Następna strona">
           <i class="bi bi-chevron-right"></i>
         </a>
       </li>
       <li class="page-item">
         <a class="page-link"
-           href="{{ url_for('active_cases', page=total_pages, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
+           href="{{ url_for('cases.active_cases', page=total_pages, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
            title="Ostatnia strona">
           <i class="bi bi-chevron-bar-right"></i>
         </a>

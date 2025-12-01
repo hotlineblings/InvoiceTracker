@@ -8,7 +8,7 @@
     Lista Spraw Klienta
   </h2>
   <div>
-    <a href="{{ url_for('manual_sync') }}" class="btn btn-info">
+    <a href="{{ url_for('sync.manual_sync') }}" class="btn btn-info">
       <i class="bi bi-arrow-clockwise me-1"></i>
       Ręcznie Synchronizuj
     </a>
@@ -144,7 +144,7 @@
           {% for c in active_cases %}
           <tr>
             <td>
-              <a href="{{ url_for('case_detail', case_number=c.case_number) }}" class="badge-custom badge-primary badge-clickable">
+              <a href="{{ url_for('cases.case_detail', case_number=c.case_number) }}" class="badge-custom badge-primary badge-clickable">
                 {{ c.case_number }}
               </a>
             </td>
@@ -208,7 +208,7 @@
                 e.preventDefault();
                 const formData = new FormData(e.target);
                 try {
-                  const response = await fetch('{{ url_for("update_email", invoice_id=c.invoice_id) }}', {
+                  const response = await fetch('{{ url_for("settings.update_email", invoice_id=c.invoice_id) }}', {
                     method: 'POST',
                     body: formData
                   });
@@ -316,7 +316,7 @@
           {% for c in completed_cases %}
           <tr>
             <td>
-              <a href="{{ url_for('case_detail', case_number=c.case_number) }}" class="badge-custom badge-success badge-clickable">
+              <a href="{{ url_for('cases.case_detail', case_number=c.case_number) }}" class="badge-custom badge-success badge-clickable">
                 {{ c.case_number }}
               </a>
             </td>
@@ -380,7 +380,7 @@
                 e.preventDefault();
                 const formData = new FormData(e.target);
                 try {
-                  const response = await fetch('{{ url_for("update_email", invoice_id=c.invoice_id) }}', {
+                  const response = await fetch('{{ url_for("settings.update_email", invoice_id=c.invoice_id) }}', {
                     method: 'POST',
                     body: formData
                   });
@@ -440,7 +440,7 @@
 
 <!-- Back Button -->
 <div class="mb-4">
-  <a href="{{ url_for('active_cases') }}" class="btn btn-primary">
+  <a href="{{ url_for('cases.active_cases') }}" class="btn btn-primary">
     <i class="bi bi-arrow-left me-1"></i>
     Powrót do aktywnych spraw
   </a>

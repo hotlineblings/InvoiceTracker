@@ -883,7 +883,7 @@
   <!-- Navbar -->
   <nav class="navbar navbar-expand-lg navbar-custom">
     <div class="container-fluid">
-      <a class="navbar-brand" href="{{ url_for('active_cases') }}">
+      <a class="navbar-brand" href="{{ url_for('cases.active_cases') }}">
         <i class="bi bi-receipt-cutoff"></i>
         <span>InvoiceTracker</span>
       </a>
@@ -895,25 +895,25 @@
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav me-auto ms-3">
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('active_cases') }}">
+            <a class="nav-link" href="{{ url_for('cases.active_cases') }}">
               <i class="bi bi-folder-open me-1"></i>
               Sprawy Aktywne
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('completed_cases') }}">
+            <a class="nav-link" href="{{ url_for('cases.completed_cases') }}">
               <i class="bi bi-folder-check me-1"></i>
               Sprawy Zakończone
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('sync_status') }}">
+            <a class="nav-link" href="{{ url_for('sync.sync_status') }}">
               <i class="bi bi-arrow-repeat me-1"></i>
               Synchronizacja
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('settings_view') }}">
+            <a class="nav-link" href="{{ url_for('settings.settings_view') }}">
               <i class="bi bi-gear me-1"></i>
               Ustawienia
             </a>
@@ -932,7 +932,7 @@
               {% for account in active_accounts %}
               <li>
                 <a class="dropdown-item {% if session.get('current_account_id') == account.id %}active{% endif %}"
-                   href="{{ url_for('switch_account', account_id=account.id) }}">
+                   href="{{ url_for('auth.switch_account', account_id=account.id) }}">
                   <i class="bi bi-building me-2"></i>
                   {{ account.name }}
                 </a>
@@ -950,14 +950,14 @@
 
           <!-- Logout -->
           <li class="nav-item ms-2">
-            <a class="nav-link" href="{{ url_for('logout') }}">
+            <a class="nav-link" href="{{ url_for('auth.logout') }}">
               <i class="bi bi-box-arrow-right me-1"></i>
               Wyloguj
             </a>
           </li>
           {% else %}
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('login') }}">
+            <a class="nav-link" href="{{ url_for('auth.login') }}">
               <i class="bi bi-box-arrow-in-right me-1"></i>
               Zaloguj
             </a>

@@ -19,7 +19,7 @@
           {% if accounts %}
           <div class="profile-list">
             {% for account in accounts %}
-            <a href="{{ url_for('switch_account', account_id=account.id) }}"
+            <a href="{{ url_for('auth.switch_account', account_id=account.id) }}"
                class="profile-card">
               <div class="profile-card-icon">
                 <i class="bi bi-building"></i>

@@ -157,7 +157,7 @@
       <thead>
         <tr>
           <th {% if sort_by == 'case_number' %}class="sorted-column"{% endif %}>
-            <a href="{{ url_for('completed_cases', sort_by='case_number', sort_order='asc' if sort_by != 'case_number' or sort_order == 'desc' else 'desc', search=search_query) }}"
+            <a href="{{ url_for('cases.completed_cases', sort_by='case_number', sort_order='asc' if sort_by != 'case_number' or sort_order == 'desc' else 'desc', search=search_query) }}"
                class="text-white text-decoration-none">
               <i class="bi bi-hash me-1"></i>
               Numer Sprawy
@@ -167,7 +167,7 @@
             </a>
           </th>
           <th {% if sort_by == 'client_id' %}class="sorted-column"{% endif %}>
-            <a href="{{ url_for('completed_cases', sort_by='client_id', sort_order='asc' if sort_by != 'client_id' or sort_order == 'desc' else 'desc', search=search_query) }}"
+            <a href="{{ url_for('cases.completed_cases', sort_by='client_id', sort_order='asc' if sort_by != 'client_id' or sort_order == 'desc' else 'desc', search=search_query) }}"
                class="text-white text-decoration-none">
               <i class="bi bi-person-badge me-1"></i>
               ID Klienta
@@ -177,7 +177,7 @@
             </a>
           </th>
           <th {% if sort_by == 'client_company_name' %}class="sorted-column"{% endif %}>
-            <a href="{{ url_for('completed_cases', sort_by='client_company_name', sort_order='asc' if sort_by != 'client_company_name' or sort_order == 'desc' else 'desc', search=search_query) }}"
+            <a href="{{ url_for('cases.completed_cases', sort_by='client_company_name', sort_order='asc' if sort_by != 'client_company_name' or sort_order == 'desc' else 'desc', search=search_query) }}"
                class="text-white text-decoration-none">
               <i class="bi bi-building me-1"></i>
               Nazwa
@@ -187,7 +187,7 @@
             </a>
           </th>
           <th {% if sort_by == 'client_nip' %}class="sorted-column"{% endif %}>
-            <a href="{{ url_for('completed_cases', sort_by='client_nip', sort_order='asc' if sort_by != 'client_nip' or sort_order == 'desc' else 'desc', search=search_query) }}"
+            <a href="{{ url_for('cases.completed_cases', sort_by='client_nip', sort_order='asc' if sort_by != 'client_nip' or sort_order == 'desc' else 'desc', search=search_query) }}"
                class="text-white text-decoration-none">
               <i class="bi bi-card-list me-1"></i>
               NIP
@@ -197,7 +197,7 @@
             </a>
           </th>
           <th {% if sort_by == 'client_email' %}class="sorted-column"{% endif %}>
-            <a href="{{ url_for('completed_cases', sort_by='client_email', sort_order='asc' if sort_by != 'client_email' or sort_order == 'desc' else 'desc', search=search_query) }}"
+            <a href="{{ url_for('cases.completed_cases', sort_by='client_email', sort_order='asc' if sort_by != 'client_email' or sort_order == 'desc' else 'desc', search=search_query) }}"
                class="text-white text-decoration-none">
               <i class="bi bi-envelope me-1"></i>
               Email
@@ -207,7 +207,7 @@
             </a>
           </th>
           <th {% if sort_by == 'total_debt' %}class="sorted-column"{% endif %}>
-            <a href="{{ url_for('completed_cases', sort_by='total_debt', sort_order='asc' if sort_by != 'total_debt' or sort_order == 'desc' else 'desc', search=search_query) }}"
+            <a href="{{ url_for('cases.completed_cases', sort_by='total_debt', sort_order='asc' if sort_by != 'total_debt' or sort_order == 'desc' else 'desc', search=search_query) }}"
                class="text-white text-decoration-none">
               <i class="bi bi-cash me-1"></i>
               Kwota Zadłużenia (zł)
@@ -217,7 +217,7 @@
             </a>
           </th>
           <th {% if sort_by == 'days_diff' %}class="sorted-column"{% endif %}>
-            <a href="{{ url_for('completed_cases', sort_by='days_diff', sort_order='asc' if sort_by != 'days_diff' or sort_order == 'desc' else 'desc', search=search_query) }}"
+            <a href="{{ url_for('cases.completed_cases', sort_by='days_diff', sort_order='asc' if sort_by != 'days_diff' or sort_order == 'desc' else 'desc', search=search_query) }}"
                class="text-white text-decoration-none">
               <i class="bi bi-calendar-event me-1"></i>
               Dni po terminie
@@ -227,7 +227,7 @@
             </a>
           </th>
           <th {% if sort_by == 'progress_percent' %}class="sorted-column"{% endif %}>
-            <a href="{{ url_for('completed_cases', sort_by='progress_percent', sort_order='asc' if sort_by != 'progress_percent' or sort_order == 'desc' else 'desc', search=search_query) }}"
+            <a href="{{ url_for('cases.completed_cases', sort_by='progress_percent', sort_order='asc' if sort_by != 'progress_percent' or sort_order == 'desc' else 'desc', search=search_query) }}"
                class="text-white text-decoration-none">
               <i class="bi bi-bar-chart me-1"></i>
               Postęp
@@ -242,13 +242,13 @@
         {% for c in cases %}
         <tr>
           <td>
-            <a href="{{ url_for('case_detail', case_number=c.case_number) }}" class="badge-custom badge-success badge-clickable">
+            <a href="{{ url_for('cases.case_detail', case_number=c.case_number) }}" class="badge-custom badge-success badge-clickable">
               {{ c.case_number }}
             </a>
           </td>
           <td>{{ c.client_id }}</td>
           <td>
-            <a href="{{ url_for('client_cases', client_id=c.client_id) }}" class="link-primary">
+            <a href="{{ url_for('cases.client_cases', client_id=c.client_id) }}" class="link-primary">
               <i class="bi bi-box-arrow-up-right me-1"></i>
               {{ c.client_company_name }}
             </a>
@@ -315,14 +315,14 @@
     {% if page > 1 %}
       <li class="page-item">
         <a class="page-link"
-           href="{{ url_for('completed_cases', page=1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
+           href="{{ url_for('cases.completed_cases', page=1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
            title="Pierwsza strona">
           <i class="bi bi-chevron-bar-left"></i>
         </a>
       </li>
       <li class="page-item">
         <a class="page-link"
-           href="{{ url_for('completed_cases', page=page-1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
+           href="{{ url_for('cases.completed_cases', page=page-1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
            title="Poprzednia strona">
           <i class="bi bi-chevron-left"></i>
         </a>
@@ -349,7 +349,7 @@
     {% for p in range(start_page, end_page + 1) %}
       <li class="page-item {% if p == page %}active{% endif %}">
         <a class="page-link"
-           href="{{ url_for('completed_cases', page=p, search=search_query, sort_by=sort_by, sort_order=sort_order) }}">
+           href="{{ url_for('cases.completed_cases', page=p, search=search_query, sort_by=sort_by, sort_order=sort_order) }}">
           {{ p }}
         </a>
       </li>
@@ -358,14 +358,14 @@
     {% if page < total_pages %}
       <li class="page-item">
         <a class="page-link"
-           href="{{ url_for('completed_cases', page=page+1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
+           href="{{ url_for('cases.completed_cases', page=page+1, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
            title="Następna strona">
           <i class="bi bi-chevron-right"></i>
         </a>
       </li>
       <li class="page-item">
         <a class="page-link"
-           href="{{ url_for('completed_cases', page=total_pages, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
+           href="{{ url_for('cases.completed_cases', page=total_pages, search=search_query, sort_by=sort_by, sort_order=sort_order) }}"
            title="Ostatnia strona">
           <i class="bi bi-chevron-bar-right"></i>
         </a>
@@ -388,7 +388,7 @@
 
 <!-- Back Button -->
 <div class="mt-4">
-  <a href="{{ url_for('active_cases') }}" class="btn btn-primary">
+  <a href="{{ url_for('cases.active_cases') }}" class="btn btn-primary">
     <i class="bi bi-arrow-left me-1"></i>
     Powrót do aktywnych spraw
   </a>
