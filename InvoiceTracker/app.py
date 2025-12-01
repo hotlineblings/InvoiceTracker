@@ -9,7 +9,7 @@ import urllib.parse
 import click
 
 try:
-    from .models import db, Invoice, NotificationLog, Case, SyncStatus, NotificationSettings, Account, AccountScheduleSettings
+    from .models import db, Invoice, NotificationLog, Case, SyncStatus, NotificationSettings, Account, AccountScheduleSettings, CANONICAL_NOTIFICATION_STAGES
     from .send_email import send_email_for_account
     from .mail_templates import MAIL_TEMPLATES
     from .scheduler import start_scheduler
@@ -17,7 +17,7 @@ try:
     from .update_db import run_full_sync
 except ImportError as e_imp1:
     try:
-        from models import db, Invoice, NotificationLog, Case, SyncStatus, NotificationSettings, Account, AccountScheduleSettings
+        from models import db, Invoice, NotificationLog, Case, SyncStatus, NotificationSettings, Account, AccountScheduleSettings, CANONICAL_NOTIFICATION_STAGES
         from send_email import send_email_for_account
         from mail_templates import MAIL_TEMPLATES
         from scheduler import start_scheduler
@@ -945,6 +945,255 @@ def create_app():
             "accounts": [{"id": acc.id, "name": acc.name} for acc in accounts_to_sync]
         }), 202
 
+    @app.route('/test/mail-debug/<int:account_id>')
+    def test_mail_debug(account_id):
+        """
+        ENDPOINT DIAGNOSTYCZNY - DRY RUN wysyłki powiadomień.
+        Symuluje dokładnie to samo co scheduler, ale NIE WYSYŁA emaili.
+
+        Parametry query:
+        - simulate_break=true/false : Test z/bez break (domyślnie false)
+        - send_real_emails=false    : Faktyczna wysyłka (domyślnie false - DRY RUN)
+
+        Przykłady:
+        /test/mail-debug/1?simulate_break=false  # Aquatest bez break
+        /test/mail-debug/2?simulate_break=true   # Pozytron z break
+        """
+        # Sprawdź autoryzację (tylko zalogowani admini)
+        if not session.get('logged_in'):
+            return jsonify({"error": "Unauthorized - login required"}), 401
+
+        # Parametry
+        simulate_break = request.args.get('simulate_break', 'false').lower() == 'true'
+        send_real_emails = request.args.get('send_real_emails', 'false').lower() == 'true'
+
+        # Pobierz konto
+        account = Account.query.get(account_id)
+        if not account:
+            return jsonify({"error": f"Account ID {account_id} not found"}), 404
+
+        if not account.is_active:
+            return jsonify({"error": f"Account '{account.name}' is not active"}), 400
+
+        # Pobierz ustawienia
+        settings = AccountScheduleSettings.get_for_account(account_id)
+        notification_settings = NotificationSettings.get_all_settings(account.id)
+
+        if not notification_settings:
+            return jsonify({
+                "error": f"No notification settings found for account '{account.name}'",
+                "account_id": account_id
+            }), 400
+
+        # Analiza duplikatów offset_days
+        offset_values = list(notification_settings.values())
+        has_duplicates = len(offset_values) != len(set(offset_values))
+
+        duplicate_offsets = []
+        if has_duplicates:
+            from collections import Counter
+            counts = Counter(offset_values)
+            duplicate_offsets = [val for val, count in counts.items() if count > 1]
+
+        # Przygotuj dane wyjściowe
+        result = {
+            "test_mode": "DRY RUN (no emails sent)" if not send_real_emails else "REAL EMAILS SENT",
+            "simulate_break": simulate_break,
+            "account": {
+                "id": account.id,
+                "name": account.name
+            },
+            "schedule_settings": {
+                "is_mail_enabled": settings.is_mail_enabled,
+                "mail_send_hour_utc": settings.mail_send_hour,
+                "mail_send_minute_utc": settings.mail_send_minute
+            },
+            "notification_settings": {},
+            "duplicates_detected": has_duplicates,
+            "duplicate_offset_values": duplicate_offsets,
+            "invoices_processed": [],
+            "summary": {}
+        }
+
+        # Dodaj notification settings do wyniku
+        for stage_name, offset_days in notification_settings.items():
+            # Skróć nazwę dla czytelności
+            stage_short = stage_name[:50] + "..." if len(stage_name) > 50 else stage_name
+            result["notification_settings"][stage_short] = offset_days
+
+        # Jeśli wysyłka wyłączona, zwróć info
+        if not settings.is_mail_enabled:
+            result["warning"] = f"Mail sending is DISABLED for account '{account.name}'"
+            result["summary"] = {
+                "total_invoices": 0,
+                "total_emails_would_send": 0,
+                "problem_detected": "MAIL_DISABLED"
+            }
+            return jsonify(result), 200
+
+        # Pobierz faktury (dokładnie tak samo jak scheduler)
+        today = date.today()
+        batch_size = 100
+        offset = 0
+
+        total_invoices = 0
+        total_emails_would_send = 0
+        invoices_with_multiple_stages = []
+
+        while True:
+            active_invoices = (Invoice.query.join(Case, Invoice.case_id == Case.id)
+                               .filter(Case.status == "active")
+                               .filter(Case.account_id == account.id)
+                               .order_by(Invoice.invoice_date.desc())
+                               .offset(offset)
+                               .limit(batch_size)
+                               .all())
+
+            if not active_invoices:
+                break
+
+            for inv in active_invoices:
+                # Pomijaj faktury bez payment_due_date
+                if not inv.payment_due_date:
+                    continue
+
+                # Pomijaj opłacone
+                if inv.left_to_pay == 0 or inv.status == 'paid':
+                    continue
+
+                # Oblicz days_diff
+                days_diff = (today - inv.payment_due_date).days
+
+                # Sprawdź email
+                effective_email = inv.get_effective_email()
+                if not effective_email or effective_email == "N/A":
+                    continue
+
+                # Dane faktury
+                invoice_data = {
+                    "invoice_number": inv.invoice_number,
+                    "payment_due_date": str(inv.payment_due_date),
+                    "days_diff": days_diff,
+                    "debt_amount_pln": round(inv.left_to_pay / 100.0, 2),
+                    "effective_email": effective_email,
+                    "stages_matched": [],
+                    "total_emails_would_send": 0
+                }
+
+                # KLUCZOWA LOGIKA: Iteruj po stages (bez break - pokazuje problem)
+                stages_that_would_send = []
+                first_stage_to_send = None
+
+                for stage_name, offset_value in notification_settings.items():
+                    stage_short = stage_name[:40] + "..." if len(stage_name) > 40 else stage_name
+
+                    if days_diff == offset_value:
+                        # Sprawdź czy już wysłano
+                        existing_log = NotificationLog.query.filter_by(
+                            invoice_number=inv.invoice_number,
+                            stage=stage_name,
+                            account_id=account.id
+                        ).first()
+
+                        already_sent = existing_log is not None
+                        would_send = not already_sent
+                        stopped_by_break = False
+
+                        # Jeśli symulujemy break
+                        if simulate_break and first_stage_to_send is None and would_send:
+                            first_stage_to_send = stage_name
+
+                        if simulate_break and first_stage_to_send and first_stage_to_send != stage_name and would_send:
+                            stopped_by_break = True
+                            would_send = False
+
+                        stage_info = {
+                            "stage": stage_short,
+                            "offset": offset_value,
+                            "already_sent": already_sent,
+                            "would_send": would_send,
+                            "stopped_by_break": stopped_by_break
+                        }
+
+                        if already_sent:
+                            stage_info["sent_at"] = existing_log.sent_at.strftime("%Y-%m-%d %H:%M")
+
+                        invoice_data["stages_matched"].append(stage_info)
+
+                        if would_send:
+                            stages_that_would_send.append(stage_name)
+                            invoice_data["total_emails_would_send"] += 1
+
+                # Jeśli faktyczna wysyłka włączona (UWAGA: użyj ostrożnie!)
+                if send_real_emails and len(stages_that_would_send) > 0:
+                    for stage_name in stages_that_would_send:
+                        try:
+                            subject, body_html = generate_email(stage_name, inv, account)
+                            if subject and body_html:
+                                send_email_for_account(account, effective_email, subject, body_html, html=True)
+
+                                # Loguj do NotificationLog
+                                new_log = NotificationLog(
+                                    account_id=account.id,
+                                    client_id=inv.client_id,
+                                    invoice_number=inv.invoice_number,
+                                    email_to=effective_email,
+                                    subject=subject,
+                                    body=body_html,
+                                    stage=stage_name,
+                                    mode="Test (via /test/mail-debug)",
+                                    scheduled_date=datetime.now()
+                                )
+                                db.session.add(new_log)
+                                db.session.commit()
+                        except Exception as e:
+                            log.error(f"Error sending test email: {e}")
+
+                # Dodaj informację o break
+                if simulate_break and first_stage_to_send:
+                    invoice_data["break_would_stop_after"] = first_stage_to_send
+
+                # Dodaj fakturę do wyniku
+                total_invoices += 1
+                total_emails_would_send += invoice_data["total_emails_would_send"]
+
+                # Zapisz tylko faktury które mają jakieś dopasowania
+                if len(invoice_data["stages_matched"]) > 0:
+                    result["invoices_processed"].append(invoice_data)
+
+                # Oznacz faktury z wieloma stages
+                if invoice_data["total_emails_would_send"] > 1:
+                    invoices_with_multiple_stages.append(inv.invoice_number)
+
+            offset += batch_size
+
+        # Podsumowanie
+        problem_detected = "NO"
+        recommendation = "Configuration looks correct. Only 1 email per invoice."
+
+        if has_duplicates:
+            problem_detected = "DUPLICATE_OFFSETS"
+            recommendation = f"CRITICAL: Duplicate offset_days detected! Values: {duplicate_offsets}. This will cause multiple emails to be sent."
+
+        if len(invoices_with_multiple_stages) > 0 and not simulate_break:
+            problem_detected = "MULTIPLE_EMAILS_PER_INVOICE"
+            recommendation = f"CRITICAL: {len(invoices_with_multiple_stages)} invoices would receive multiple stages. Add 'break' after line 154 in scheduler.py!"
+
+        if simulate_break and has_duplicates and len(invoices_with_multiple_stages) == 0:
+            problem_detected = "FIXED_BY_BREAK"
+            recommendation = "Adding 'break' would fix the duplicate offset_days problem. But you should also fix the database configuration."
+
+        result["summary"] = {
+            "total_invoices_processed": total_invoices,
+            "total_invoices_with_matches": len(result["invoices_processed"]),
+            "total_emails_would_send": total_emails_would_send,
+            "invoices_with_multiple_stages": invoices_with_multiple_stages,
+            "problem_detected": problem_detected,
+            "recommendation": recommendation
+        }
+
+        return jsonify(result), 200
+
     @app.route('/sync_status')
     def sync_status():
         """
@@ -1066,8 +1315,8 @@ def create_app():
                 return redirect(url_for('select_account'))
 
             # Załaduj NotificationSettings (offsets dla 5 etapów)
-            NotificationSettings.initialize_default_settings(account_id)
-            notification_settings = NotificationSettings.get_all_settings(account_id)
+            # SELF-HEALING: Normalizacja automatycznie usuwa stare wpisy i dodaje brakujące
+            notification_settings = NotificationSettings.normalize_for_account(account_id)
 
             # Załaduj AccountScheduleSettings (harmonogramy)
             schedule_settings = AccountScheduleSettings.get_for_account(account_id)
@@ -1127,7 +1376,8 @@ def create_app():
                         return render_template('settings.html',
                                              account=account,
                                              notification_settings=notification_settings,
-                                             schedule_settings=schedule_settings)
+                                             schedule_settings=schedule_settings,
+                                             CANONICAL_STAGES=CANONICAL_NOTIFICATION_STAGES)
 
                     # Zapis do bazy
                     db.session.add(account)
@@ -1151,7 +1401,8 @@ def create_app():
             return render_template('settings.html',
                                  account=account,
                                  notification_settings=notification_settings,
-                                 schedule_settings=schedule_settings)
+                                 schedule_settings=schedule_settings,
+                                 CANONICAL_STAGES=CANONICAL_NOTIFICATION_STAGES)
 
         except Exception as e:
             log.error(f"[settings] Błąd ogólny: {e}", exc_info=True)
@@ -1665,6 +1916,76 @@ def create_app():
         print("\n" + "=" * 80)
         print("✅ Weryfikacja zakończona")
         print("=" * 80)
+
+    @app.cli.command('normalize-all-notification-settings')
+    def normalize_all_notification_settings_cli():
+        """
+        Normalizuje NotificationSettings dla WSZYSTKICH aktywnych profili.
+
+        SELF-HEALING SYSTEM:
+        - Usuwa stare/niepoprawne wpisy (np. stage_1, stage_2, stage_3, stage_4, stage_5)
+        - Dodaje brakujące wpisy z domyślnymi wartościami
+        - Zapewnia że każdy profil ma dokładnie 5 poprawnych wpisów z CANONICAL_NOTIFICATION_STAGES
+
+        Użycie:
+            flask normalize-all-notification-settings
+
+        Na produkcji (Cloud Shell):
+            gcloud app instances ssh
+            cd /srv
+            flask normalize-all-notification-settings
+        """
+        from InvoiceTracker.models import Account, NotificationSettings
+
+        print("=" * 80)
+        print("🔧 NORMALIZACJA NOTIFICATION SETTINGS - WSZYSTKIE PROFILE")
+        print("=" * 80)
+
+        # Pobierz wszystkie aktywne konta
+        accounts = Account.query.filter_by(is_active=True).all()
+
+        if not accounts:
+            print("\n❌ Brak aktywnych kont w bazie")
+            return
+
+        print(f"\nZnaleziono {len(accounts)} aktywnych profili")
+
+        # Normalizuj każdy profil
+        for account in accounts:
+            print(f"\n{'─' * 80}")
+            print(f"📋 Profil: {account.name} (ID: {account.id})")
+            print(f"{'─' * 80}")
+
+            try:
+                # Wywołaj normalizację (automatycznie czyści i dodaje)
+                normalized_settings = NotificationSettings.normalize_for_account(account.id)
+
+                print(f"✅ Znormalizowano pomyślnie - {len(normalized_settings)}/5 ustawień:")
+                for stage_name, offset_days in normalized_settings.items():
+                    # Wyświetl skróconą nazwę (pierwsze 60 znaków)
+                    short_name = stage_name[:60] + "..." if len(stage_name) > 60 else stage_name
+                    print(f"  - {short_name}: {offset_days} dni")
+
+            except Exception as e:
+                print(f"❌ BŁĄD podczas normalizacji {account.name}: {e}")
+                import traceback
+                print(traceback.format_exc())
+
+        # Podsumowanie końcowe
+        print("\n" + "=" * 80)
+        print("📊 PODSUMOWANIE KOŃCOWE:")
+        print("=" * 80)
+
+        for account in accounts:
+            settings_count = NotificationSettings.query.filter_by(account_id=account.id).count()
+            status = "✅" if settings_count == 5 else "⚠️"
+            print(f"  {status} {account.name}: {settings_count}/5 ustawień")
+
+        print("\n" + "=" * 80)
+        print("✅ Normalizacja zakończona")
+        print("=" * 80)
+        print("\n💡 Teraz każdy profil ma IDENTYCZNĄ strukturę 5 etapów powiadomień")
+        print("💡 Panel ustawień dla wszystkich profili będzie wyglądał tak samo")
 
     return app
 

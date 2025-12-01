@@ -145,7 +145,7 @@
         </small>
 
         <div class="row">
-          {% for stage_name, offset_days in notification_settings.items() %}
+          {% for stage_name, default_offset in CANONICAL_STAGES %}
           <div class="col-md-6 mb-3">
             <label for="stage_{{ loop.index }}" class="form-label">
               <i class="bi bi-{{ loop.index }}-circle me-1"></i>
@@ -156,7 +156,7 @@
                      class="form-control"
                      id="stage_{{ loop.index }}"
                      name="{{ stage_name }}"
-                     value="{{ offset_days }}"
+                     value="{{ notification_settings.get(stage_name, default_offset) }}"
                      min="-365"
                      max="365"
                      required>

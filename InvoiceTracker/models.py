@@ -134,12 +134,29 @@ class SyncStatus(db.Model):
 
     def __repr__(self):
         return f'<SyncStatus {self.sync_type}: {self.processed} faktur, {self.duration:.2f}s>'
-    
-    
+
+
+# ===== CANONICAL SOURCE OF TRUTH =====
+# Definicja oficjalnej struktury 5 etapów powiadomień
+# Każdy profil MUSI mieć dokładnie te same nazwy w bazie danych
+# OrderedDict zachowuje kolejność wyświetlania
+CANONICAL_NOTIFICATION_STAGES = [
+    ("Przypomnienie o zbliżającym się terminie płatności", -1),
+    ("Powiadomienie o upływie terminu płatności", 7),
+    ("Wezwanie do zapłaty", 14),
+    ("Powiadomienie o zamiarze skierowania sprawy do windykatora zewnętrznego i publikacji na giełdzie wierzytelności", 21),
+    ("Przekazanie sprawy do windykatora zewnętrznego", 30),
+]
+
+
 class NotificationSettings(db.Model):
     """
     Model NotificationSettings – przechowuje ustawienia powiadomień w bazie danych.
     Każde konto (Account) ma własne ustawienia.
+
+    MULTI-TENANCY CONSISTENCY:
+    - Każdy profil MUSI mieć dokładnie 5 wpisów zdefiniowanych w CANONICAL_NOTIFICATION_STAGES
+    - Metoda normalize_for_account() automatycznie naprawia niespójne dane
     """
     id = db.Column(db.Integer, primary_key=True)
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
@@ -175,7 +192,10 @@ class NotificationSettings(db.Model):
 
     @classmethod
     def initialize_default_settings(cls, account_id):
-        """Initializes default settings for a specific account if none exist"""
+        """
+        DEPRECATED: Use normalize_for_account() instead.
+        Initializes default settings for a specific account if none exist.
+        """
         if not cls.query.filter_by(account_id=account_id).first():
             default_settings = {
                 "Przypomnienie o zbliżającym się terminie płatności": -1,
@@ -188,6 +208,66 @@ class NotificationSettings(db.Model):
                 new_setting = cls(account_id=account_id, stage_name=stage_name, offset_days=offset_days)
                 db.session.add(new_setting)
             db.session.commit()
+
+    @classmethod
+    def normalize_for_account(cls, account_id):
+        """
+        Normalizuje NotificationSettings dla profilu - zapewnia dokładnie 5 poprawnych wpisów.
+
+        SELF-HEALING SYSTEM:
+        1. Pobiera wszystkie istniejące wpisy z bazy
+        2. Usuwa wpisy NIE znajdujące się w CANONICAL_NOTIFICATION_STAGES (np. stare stage_1, stage_2)
+        3. Dodaje brakujące wpisy z domyślnymi wartościami z CANONICAL_NOTIFICATION_STAGES
+        4. Zwraca OrderedDict z 5 wpisami w poprawnej kolejności
+
+        Args:
+            account_id (int): ID profilu do normalizacji
+
+        Returns:
+            OrderedDict: Słownik {stage_name: offset_days} z dokładnie 5 wpisami
+        """
+        from collections import OrderedDict
+
+        # Krok 1: Pobierz wszystkie istniejące wpisy
+        existing_settings = cls.query.filter_by(account_id=account_id).all()
+
+        # Krok 2: Stwórz set nazw kanonicznych dla szybkiego sprawdzania
+        canonical_names = {stage_name for stage_name, _ in CANONICAL_NOTIFICATION_STAGES}
+
+        # Krok 3: Usuń wpisy NIE znajdujące się w CANONICAL_NOTIFICATION_STAGES
+        for setting in existing_settings:
+            if setting.stage_name not in canonical_names:
+                # Stary/niepoprawny wpis (np. "stage_1", "stage_2") - USUŃ
+                db.session.delete(setting)
+                print(f"[normalize] Usunięto niepoprawny wpis: {setting.stage_name} dla account_id={account_id}")
+
+        db.session.commit()
+
+        # Krok 4: Pobierz ponownie po czyszczeniu
+        existing_settings = cls.query.filter_by(account_id=account_id).all()
+        existing_dict = {setting.stage_name: setting.offset_days for setting in existing_settings}
+
+        # Krok 5: Dodaj brakujące wpisy z CANONICAL_NOTIFICATION_STAGES
+        for stage_name, default_offset in CANONICAL_NOTIFICATION_STAGES:
+            if stage_name not in existing_dict:
+                # Brakujący wpis - DODAJ z domyślną wartością
+                new_setting = cls(
+                    account_id=account_id,
+                    stage_name=stage_name,
+                    offset_days=default_offset
+                )
+                db.session.add(new_setting)
+                existing_dict[stage_name] = default_offset
+                print(f"[normalize] Dodano brakujący wpis: {stage_name} = {default_offset} dni dla account_id={account_id}")
+
+        db.session.commit()
+
+        # Krok 6: Zwróć OrderedDict w kolejności CANONICAL_NOTIFICATION_STAGES
+        normalized = OrderedDict()
+        for stage_name, default_offset in CANONICAL_NOTIFICATION_STAGES:
+            normalized[stage_name] = existing_dict.get(stage_name, default_offset)
+
+        return normalized
 
 
 class Account(db.Model):
