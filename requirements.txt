@@ -29,3 +29,7 @@ yarl==1.18.3
 psycopg2-binary==2.9.6
 flask-migrate==4.1.0
 cryptography==41.0.7
+Flask-WTF>=1.2.0
+WTForms>=3.1.0
+email-validator>=2.0.0
+google-cloud-tasks>=2.14.0

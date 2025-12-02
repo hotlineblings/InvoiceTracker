@@ -9,7 +9,7 @@ import urllib.parse
 from flask import Flask, session, request, redirect, url_for, flash
 from dotenv import load_dotenv
 
-from .extensions import db, migrate
+from .extensions import db, migrate, csrf
 from .blueprints import register_blueprints
 from .cli import register_cli
 # Import wszystkich modeli - wymagane dla Alembic autogenerate
@@ -118,6 +118,15 @@ def _init_extensions(app):
     """Inicjalizuje rozszerzenia Flask."""
     db.init_app(app)
     migrate.init_app(app, db)
+    csrf.init_app(app)
+
+    # Exempt tasks blueprint from CSRF (called by Cloud Tasks, not browser)
+    from .blueprints.tasks import tasks_bp
+    csrf.exempt(tasks_bp)
+
+    # Konfiguracja multi-tenancy filtering
+    from .extensions import configure_tenant_filtering
+    configure_tenant_filtering(app)
 
     # Dodaj min do Jinja2
     app.jinja_env.globals.update(min=min)
@@ -125,6 +134,7 @@ def _init_extensions(app):
 
 def _register_middleware(app):
     """Rejestruje middleware i context processors."""
+    from .tenant_context import set_tenant, clear_tenant
 
     @app.context_processor
     def inject_active_accounts():
@@ -149,7 +159,8 @@ def _register_middleware(app):
             'auth.login',
             'auth.select_account',
             'auth.switch_account',
-            'sync.cron_run_sync'
+            'sync.cron_run_sync',
+            'tasks.run_sync_for_account'  # Cloud Tasks endpoint
         }
 
         # Sprawdź czy to endpoint publiczny
@@ -170,6 +181,18 @@ def _register_middleware(app):
         if not session.get('current_account_id'):
             flash("Wybierz profil aby kontynuować.", "warning")
             return redirect(url_for('auth.select_account'))
+
+    @app.before_request
+    def set_tenant_context():
+        """Ustawia kontekst tenanta z sesji."""
+        account_id = session.get('current_account_id')
+        if account_id:
+            set_tenant(account_id)
+
+    @app.teardown_request
+    def clear_tenant_context(exception=None):
+        """Czyści kontekst tenanta po zakończeniu requestu."""
+        clear_tenant()
 
 
 def _start_scheduler_if_needed(app):

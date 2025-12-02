@@ -3,9 +3,10 @@ Blueprint autoryzacji.
 Logowanie, wylogowanie, wybór profilu.
 """
 import os
-from flask import Blueprint, render_template, redirect, url_for, request, flash, session
+from flask import Blueprint, render_template, redirect, url_for, flash, session
 
 from ..models import Account
+from ..forms import LoginForm, SwitchAccountForm
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -13,18 +14,17 @@ auth_bp = Blueprint('auth', __name__)
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     """Logowanie administratora."""
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
+    form = LoginForm()
+    if form.validate_on_submit():
         admin_user = os.environ.get('ADMIN_USERNAME', 'admin')
         admin_pass = os.environ.get('ADMIN_PASSWORD', 'admin')
-        if username == admin_user and password == admin_pass:
+        if form.username.data == admin_user and form.password.data == admin_pass:
             session['logged_in'] = True
             flash("Zalogowano.", "success")
             return redirect(url_for('auth.select_account'))
         else:
             flash("Złe dane.", "danger")
-    return render_template('login.html')
+    return render_template('login.html', form=form)
 
 
 @auth_bp.route('/select_account')
@@ -42,23 +42,28 @@ def select_account():
         flash(f'Automatycznie wybrano profil: {accounts[0].name}', 'info')
         return redirect(url_for('cases.active_cases'))
 
-    return render_template('select_account.html', accounts=accounts)
+    switch_form = SwitchAccountForm()
+    return render_template('select_account.html', accounts=accounts, switch_form=switch_form)
 
 
-@auth_bp.route('/switch_account/<int:account_id>')
-def switch_account(account_id):
-    """Przełączanie między profilami."""
+@auth_bp.route('/switch_account', methods=['POST'])
+def switch_account():
+    """Przełączanie między profilami (POST z CSRF)."""
     if not session.get('logged_in'):
         return redirect(url_for('auth.login'))
 
-    account = Account.query.filter_by(id=account_id, is_active=True).first()
-    if not account:
-        flash("Nieprawidłowe konto.", "danger")
-        return redirect(url_for('auth.select_account'))
+    form = SwitchAccountForm()
+    if form.validate_on_submit():
+        account_id = int(form.account_id.data)
+        account = Account.query.filter_by(id=account_id, is_active=True).first()
+        if not account:
+            flash("Nieprawidłowe konto.", "danger")
+            return redirect(url_for('auth.select_account'))
 
-    session['current_account_id'] = account.id
-    session['current_account_name'] = account.name
-    flash(f'Przełączono na profil: {account.name}', 'success')
+        session['current_account_id'] = account.id
+        session['current_account_name'] = account.name
+        flash(f'Przełączono na profil: {account.name}', 'success')
+
     return redirect(url_for('cases.active_cases'))
 
 

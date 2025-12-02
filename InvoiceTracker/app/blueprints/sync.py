@@ -3,44 +3,25 @@ Blueprint synchronizacji.
 Reczna synchronizacja, CRON endpoint, status synchronizacji, diagnostyka maili.
 """
 import logging
-import threading
 from datetime import date, datetime, timedelta, timezone as dt_timezone, time as dt_time
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, session, jsonify, current_app
+from flask import Blueprint, render_template, redirect, url_for, request, flash, session, jsonify
 
 from ..models import Account, SyncStatus, AccountScheduleSettings
 from ..services import diagnostic_service
+from ..services.cloud_tasks import enqueue_sync_task
+from ..forms import ManualSyncForm
 
 log = logging.getLogger(__name__)
 
 sync_bp = Blueprint('sync', __name__)
 
 
-def background_sync(app_context, account_id):
-    """
-    Funkcja synchronizacji w tle dla konkretnego konta.
-
-    Args:
-        app_context: Flask application context
-        account_id (int): ID profilu do synchronizacji
-    """
-    from ..services.update_db import run_full_sync
-
-    with app_context:
-        try:
-            log.info(f"[background_sync] Start synchronizacji w tle dla account_id={account_id}...")
-            start_time = datetime.utcnow()
-            processed = run_full_sync(account_id)
-            duration = (datetime.utcnow() - start_time).total_seconds()
-            log.info(f"[background_sync] Koniec synchronizacji w tle dla account_id={account_id}. Czas: {duration:.2f}s. Przetworzono/zmieniono: {processed}.")
-        except Exception as e:
-            log.error(f"Krytyczny blad w watku background_sync dla account_id={account_id}: {e}", exc_info=True)
-
-
-@sync_bp.route('/manual_sync', methods=['GET'])
+@sync_bp.route('/manual_sync', methods=['POST'])
 def manual_sync():
-    """Reczna synchronizacja dla wybranego profilu."""
+    """Reczna synchronizacja dla wybranego profilu (POST z CSRF)."""
+    form = ManualSyncForm()
     if not session.get('logged_in'):
         flash("Musisz byc zalogowany, aby uruchomic synchronizacje.", "danger")
         return redirect(url_for('auth.login'))
@@ -50,13 +31,18 @@ def manual_sync():
         flash("Wybierz profil przed synchronizacja.", "warning")
         return redirect(url_for('auth.select_account'))
 
-    account_name = session.get('current_account_name', f'ID:{account_id}')
-    log.info(f"Zadanie recznej synchronizacji dla konta '{account_name}' (ID: {account_id}).")
+    if form.validate_on_submit():
+        account_name = session.get('current_account_name', f'ID:{account_id}')
+        log.info(f"Zadanie recznej synchronizacji dla konta '{account_name}' (ID: {account_id}).")
 
-    # Uruchom synchronizacje tylko dla wybranego konta
-    thread = threading.Thread(target=background_sync, args=(current_app.app_context(), account_id))
-    thread.start()
-    flash(f"Synchronizacja w tle uruchomiona dla profilu '{account_name}'. Wyniki pojawia sie w statusie synchronizacji.", "info")
+        # Zakolejkuj task (Cloud Tasks na GAE, HTTP POST lokalnie)
+        success = enqueue_sync_task(account_id, 'full')
+
+        if success:
+            flash(f"Synchronizacja uruchomiona dla profilu '{account_name}'. Wyniki pojawia sie w statusie synchronizacji.", "info")
+        else:
+            flash("Blad uruchamiania synchronizacji.", "danger")
+
     return redirect(url_for('cases.active_cases'))
 
 
@@ -107,17 +93,19 @@ def cron_run_sync():
             "current_time_utc": f"{current_hour:02d}:{current_minute:02d}"
         }), 200
 
-    log.info(f"[Smart CRON] Uruchamiam synchronizacje dla {len(accounts_to_sync)} kont...")
+    log.info(f"[Smart CRON] Kolejkuje synchronizacje dla {len(accounts_to_sync)} kont...")
 
+    tasks_queued = 0
     for account in accounts_to_sync:
-        log.info(f"[Smart CRON] Uruchamiam sync dla konta: {account.name} (ID: {account.id})")
-        thread = threading.Thread(target=background_sync, args=(current_app.app_context(), account.id))
-        thread.start()
+        log.info(f"[Smart CRON] Kolejkuje sync dla konta: {account.name} (ID: {account.id})")
+        if enqueue_sync_task(account.id, 'full'):
+            tasks_queued += 1
 
-    log.info(f"[Smart CRON] Watki background_sync zostaly uruchomione dla {len(accounts_to_sync)} kont")
+    log.info(f"[Smart CRON] Zakolejkowano {tasks_queued} zadan Cloud Tasks")
     return jsonify({
         "status": "accepted",
-        "message": f"Sync jobs started for {len(accounts_to_sync)} accounts",
+        "message": f"Sync tasks queued for {tasks_queued} accounts",
+        "tasks_queued": tasks_queued,
         "current_time_utc": f"{current_hour:02d}:{current_minute:02d}",
         "accounts": [{"id": acc.id, "name": acc.name} for acc in accounts_to_sync]
     }), 202

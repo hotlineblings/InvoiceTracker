@@ -124,8 +124,8 @@ class SyncStatus(db.Model):
       - update_sync_duration: czas trwania update_existing_cases()
     """
     id = db.Column(db.Integer, primary_key=True)
-    # MULTI-TENANCY: Powiązanie z kontem (nullable=True dla wstecznej kompatybilności)
-    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=True, index=True)
+    # MULTI-TENANCY: Powiązanie z kontem (NOT NULL - wymagane dla tenant isolation)
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False, index=True)
     sync_type = db.Column(db.String(50))
     processed = db.Column(db.Integer)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)

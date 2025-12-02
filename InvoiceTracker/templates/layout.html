@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>InvoiceTracker - Panel Windykacyjny</title>
 
   <!-- Bootstrap 5.3 -->
@@ -931,11 +932,14 @@
             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
               {% for account in active_accounts %}
               <li>
-                <a class="dropdown-item {% if session.get('current_account_id') == account.id %}active{% endif %}"
-                   href="{{ url_for('auth.switch_account', account_id=account.id) }}">
-                  <i class="bi bi-building me-2"></i>
-                  {{ account.name }}
-                </a>
+                <form method="post" action="{{ url_for('auth.switch_account') }}" class="m-0">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="account_id" value="{{ account.id }}">
+                  <button type="submit" class="dropdown-item {% if session.get('current_account_id') == account.id %}active{% endif %}">
+                    <i class="bi bi-building me-2"></i>
+                    {{ account.name }}
+                  </button>
+                </form>
               </li>
               {% endfor %}
             </ul>

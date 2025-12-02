@@ -7,12 +7,13 @@
     <i class="bi bi-building me-2"></i>
     Lista Spraw Klienta
   </h2>
-  <div>
-    <a href="{{ url_for('sync.manual_sync') }}" class="btn btn-info">
+  <form method="post" action="{{ url_for('sync.manual_sync') }}" class="m-0">
+    {{ sync_form.hidden_tag() }}
+    <button type="submit" class="btn btn-info">
       <i class="bi bi-arrow-clockwise me-1"></i>
       Ręcznie Synchronizuj
-    </a>
-  </div>
+    </button>
+  </form>
 </div>
 
 <!-- Client Details Card -->
@@ -207,6 +208,8 @@
               async function submitUpdateActive{{ c.invoice_id }}(e) {
                 e.preventDefault();
                 const formData = new FormData(e.target);
+                const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                formData.append('csrf_token', csrfToken);
                 try {
                   const response = await fetch('{{ url_for("settings.update_email", invoice_id=c.invoice_id) }}', {
                     method: 'POST',
@@ -379,6 +382,8 @@
               async function submitUpdateCompleted{{ c.invoice_id }}(e) {
                 e.preventDefault();
                 const formData = new FormData(e.target);
+                const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                formData.append('csrf_token', csrfToken);
                 try {
                   const response = await fetch('{{ url_for("settings.update_email", invoice_id=c.invoice_id) }}', {
                     method: 'POST',

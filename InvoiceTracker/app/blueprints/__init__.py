@@ -5,6 +5,7 @@ from .auth import auth_bp
 from .cases import cases_bp
 from .settings import settings_bp
 from .sync import sync_bp
+from .tasks import tasks_bp
 
 
 def register_blueprints(app):
@@ -18,3 +19,4 @@ def register_blueprints(app):
     app.register_blueprint(cases_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(sync_bp)
+    app.register_blueprint(tasks_bp)

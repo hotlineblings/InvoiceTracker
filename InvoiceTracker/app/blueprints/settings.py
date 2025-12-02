@@ -8,6 +8,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from ..extensions import db
 from ..models import Account, Invoice, Case, NotificationSettings, AccountScheduleSettings
 from ..constants import CANONICAL_NOTIFICATION_STAGES
+from ..forms import SettingsForm, EmailUpdateForm
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +26,12 @@ def settings_view():
     - Opcje dodatkowe (auto-close)
 
     Czas wyświetlany w Europe/Warsaw, przechowywany w UTC.
+
+    Uwaga: Formularz używa hybrydowego podejścia - WTForms dla walidacji CSRF
+    i standardowych pól, request.form dla dynamicznych stage offsets.
     """
+    form = SettingsForm()
+
     try:
         account_id = session.get('current_account_id')
         if not account_id:
@@ -43,7 +49,7 @@ def settings_view():
         # Załaduj AccountScheduleSettings (harmonogramy)
         schedule_settings = AccountScheduleSettings.get_for_account(account_id)
 
-        if request.method == 'POST':
+        if form.validate_on_submit():
             try:
                 # === SEKCJA 1: API Key ===
                 api_key = request.form.get('infakt_api_key', '').strip()
@@ -94,6 +100,7 @@ def settings_view():
                     for error in errors:
                         flash(error, "danger")
                     return render_template('settings.html',
+                                         form=form,
                                          account=account,
                                          notification_settings=notification_settings,
                                          schedule_settings=schedule_settings,
@@ -119,6 +126,7 @@ def settings_view():
 
         # GET - renderuj formularz
         return render_template('settings.html',
+                             form=form,
                              account=account,
                              notification_settings=notification_settings,
                              schedule_settings=schedule_settings,
@@ -133,15 +141,25 @@ def settings_view():
 @settings_bp.route('/update_email/<int:invoice_id>', methods=['POST'])
 def update_email(invoice_id):
     """
-    Endpoint do aktualizacji override_email dla faktury.
+    Endpoint do aktualizacji override_email dla faktury (AJAX).
     Umożliwia administratorowi ręczne nadpisanie emaila klienta z API.
+
+    CSRF token jest walidowany automatycznie przez Flask-WTF.
+    Token musi być przekazany w FormData jako 'csrf_token'.
     """
+    form = EmailUpdateForm()
+
     try:
         account_id = session.get('current_account_id')
         if not account_id:
             return jsonify({"success": False, "message": "Wybierz profil."}), 403
 
-        new_email = request.form.get('new_email', '').strip()
+        # Walidacja CSRF przez WTForms (form.validate() sprawdza CSRF)
+        if not form.validate():
+            errors = [str(e) for field_errors in form.errors.values() for e in field_errors]
+            return jsonify({"success": False, "message": f"Błąd walidacji: {', '.join(errors)}"}), 400
+
+        new_email = form.new_email.data.strip() if form.new_email.data else ''
 
         invoice = (
             Invoice.query

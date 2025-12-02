@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from ..extensions import db
 from ..models import Invoice, NotificationLog, Case, NotificationSettings, Account, AccountScheduleSettings
+from ..tenant_context import tenant_context, sudo
 from .send_email import send_email_for_account, close_smtp_connection
 from .mail_utils import generate_email
 
@@ -42,8 +43,10 @@ def run_mail_for_single_account(app, account_id):
         app: Flask application context
         account_id (int): ID konta dla ktorego wyslac maile
     """
-    with app.app_context():
-        account = Account.query.get(account_id)
+    with app.app_context(), tenant_context(account_id):
+        # Używamy sudo() dla zapytania o Account (nie ma account_id)
+        with sudo():
+            account = Account.query.get(account_id)
         if not account or not account.is_active:
             print(f"[scheduler] Konto ID:{account_id} nie istnieje lub nieaktywne.")
             return
@@ -188,13 +191,16 @@ def start_scheduler(app):
     scheduler = BackgroundScheduler()
 
     with app.app_context():
-        # Pobierz wszystkie aktywne konta
-        active_accounts = Account.query.filter_by(is_active=True).all()
+        # Pobierz wszystkie aktywne konta (sudo - Account nie ma account_id)
+        with sudo():
+            active_accounts = Account.query.filter_by(is_active=True).all()
 
         print(f"[scheduler] Inicjalizacja schedulera dla {len(active_accounts)} aktywnych kont...")
 
         for account in active_accounts:
-            settings = AccountScheduleSettings.get_for_account(account.id)
+            # Użyj tenant_context dla pobierania ustawień
+            with tenant_context(account.id):
+                settings = AccountScheduleSettings.get_for_account(account.id)
 
             if not settings.is_mail_enabled:
                 print(f"[scheduler] Pomijam konto '{account.name}' - wysylka wylaczona")

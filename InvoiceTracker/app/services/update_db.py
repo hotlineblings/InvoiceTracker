@@ -10,6 +10,7 @@ import traceback
 
 from ..extensions import db
 from ..models import Invoice, Case, SyncStatus, NotificationSettings, NotificationLog, Account, AccountScheduleSettings
+from ..tenant_context import tenant_context, sudo
 from ..providers import get_provider
 
 log = logging.getLogger(__name__)
@@ -30,7 +31,9 @@ def sync_new_invoices(account_id, start_offset=0, limit=100):
 
     Zwraca krotke: (processed_count, new_cases_count, api_calls, duration).
     """
-    account = Account.query.get(account_id)
+    # Account nie ma account_id - używamy sudo()
+    with sudo():
+        account = Account.query.get(account_id)
     if not account:
         log.error(f"[sync_new_invoices] Nie znaleziono konta o ID: {account_id}")
         return 0, 0, 0, 0.0
@@ -236,7 +239,9 @@ def update_existing_cases(account_id, start_offset=0, limit=100):
 
     Zwraca krotke: (processed_updates, active_after_update, closed_cases_count, api_calls, duration).
     """
-    account = Account.query.get(account_id)
+    # Account nie ma account_id - używamy sudo()
+    with sudo():
+        account = Account.query.get(account_id)
     if not account:
         log.error(f"[update_existing_cases] Nie znaleziono konta o ID: {account_id}")
         return 0, 0, 0, 0, 0.0
@@ -417,7 +422,9 @@ def run_full_sync(account_id):
     Returns:
         int: Liczba przetworzonych/zmienionych rekordow
     """
-    account = Account.query.get(account_id)
+    # Account nie ma account_id - używamy sudo()
+    with sudo():
+        account = Account.query.get(account_id)
     if not account:
         log.error(f"[run_full_sync] Nie znaleziono konta o ID: {account_id}")
         return 0
