@@ -6,7 +6,7 @@ import logging
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session, jsonify
 
 from ..extensions import db
-from ..models import Account, Invoice, Case, NotificationSettings, AccountScheduleSettings
+from ..models import Account, Invoice, NotificationSettings, AccountScheduleSettings
 from ..constants import CANONICAL_NOTIFICATION_STAGES
 from ..forms import SettingsForm, EmailUpdateForm
 
@@ -161,13 +161,8 @@ def update_email(invoice_id):
 
         new_email = form.new_email.data.strip() if form.new_email.data else ''
 
-        invoice = (
-            Invoice.query
-            .join(Case, Invoice.case_id == Case.id)
-            .filter(Invoice.id == invoice_id)
-            .filter(Case.account_id == account_id)
-            .first()
-        )
+        # Invoice ma teraz bezpośredni account_id - nie potrzeba JOIN przez Case
+        invoice = Invoice.query.filter_by(id=invoice_id, account_id=account_id).first()
 
         if not invoice:
             return jsonify({"success": False, "message": "Nie znaleziono faktury lub brak dostępu."}), 404

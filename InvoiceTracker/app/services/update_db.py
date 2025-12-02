@@ -109,6 +109,7 @@ def sync_new_invoices(account_id, start_offset=0, limit=100):
 
             new_inv = Invoice(
                 id=invoice_id,
+                account_id=account_id,  # MULTI-TENANCY: bezpośredni tenant reference
                 invoice_number=invoice_num_api,
                 invoice_date=invoice_date,
                 payment_due_date=payment_due,

@@ -27,14 +27,8 @@ def mark_invoice_as_paid(account_id, invoice_id):
             - invoice_number: str lub None
     """
     try:
-        # Pobierz fakture z walidacja konta
-        invoice = (
-            Invoice.query
-            .join(Case, Invoice.case_id == Case.id)
-            .filter(Invoice.id == invoice_id)
-            .filter(Case.account_id == account_id)
-            .first()
-        )
+        # Pobierz fakture z walidacja konta (Invoice ma teraz bezpośredni account_id)
+        invoice = Invoice.query.filter_by(id=invoice_id, account_id=account_id).first()
 
         if not invoice:
             return {

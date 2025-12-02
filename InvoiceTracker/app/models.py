@@ -47,8 +47,12 @@ class Invoice(db.Model):
     """
     Model Invoice – przechowuje dane faktury pobrane z API inFakt
     oraz dane klienta. Jest powiązany (1:1) ze sprawą windykacyjną (Case).
+
+    MULTI-TENANCY: Ma własne account_id dla bezpośredniej izolacji danych.
+    Zarejestrowany w TENANT_MODELS dla automatycznego filtrowania.
     """
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False, index=True)
     invoice_number = db.Column(db.String(50))
     invoice_date = db.Column(db.Date)
     payment_due_date = db.Column(db.Date)

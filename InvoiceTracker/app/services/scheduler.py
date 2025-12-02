@@ -76,10 +76,10 @@ def run_mail_for_single_account(app, account_id):
         auto_close_enabled = settings.auto_close_after_stage5
 
         while True:
-            # Pobierz faktury tylko dla tego konta
+            # Pobierz faktury dla tego konta (account_id auto-filtrowany przez TENANT_MODELS)
+            # JOIN pozostaje dla filtra Case.status
             active_invoices = (Invoice.query.join(Case, Invoice.case_id == Case.id)
                                .filter(Case.status == "active")
-                               .filter(Case.account_id == account.id)
                                .order_by(Invoice.invoice_date.desc())
                                .offset(offset)
                                .limit(batch_size)

@@ -185,15 +185,15 @@ def register_cli(app):
         print("ORPHANED INVOICES (faktury bez Case):")
         print("-" * 80)
 
-        # UWAGA: Orphaned invoices bez account_id to potencjalny problem izolacji
+        # Invoice ma teraz bezpośredni account_id - filtrujemy po profilu
         orphaned = Invoice.query.filter(
+            Invoice.account_id == account.id,
             Invoice.case_id == None,
             Invoice.left_to_pay > 0,
             Invoice.status.in_(['sent', 'printed'])
         ).all()
 
-        print(f"   Liczba orphaned invoices (WSZYSTKIE profile): {len(orphaned)}")
-        print(f"   UWAGA: Orphaned invoices nie maja account_id - pokazujemy wszystkie dla diagnostyki")
+        print(f"   Liczba orphaned invoices dla profilu {account.name}: {len(orphaned)}")
 
         if orphaned:
             print(f"\n   Szczegoly:")

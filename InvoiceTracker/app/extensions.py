@@ -34,10 +34,10 @@ def configure_tenant_filtering(app):
     na SyncStatus.account_id.
     """
     from .tenant_context import get_tenant, is_sudo
-    from .models import Case, NotificationLog, NotificationSettings, SyncStatus, AccountScheduleSettings
+    from .models import Case, NotificationLog, NotificationSettings, SyncStatus, AccountScheduleSettings, Invoice
 
-    # Zarejestruj modele z account_id
-    for model in [Case, NotificationLog, NotificationSettings, SyncStatus, AccountScheduleSettings]:
+    # Zarejestruj modele z account_id (włącznie z Invoice po migracji 2025120200)
+    for model in [Case, NotificationLog, NotificationSettings, SyncStatus, AccountScheduleSettings, Invoice]:
         register_tenant_model(model)
         log.debug(f"[tenant] Zarejestrowano model: {model.__name__}")
 

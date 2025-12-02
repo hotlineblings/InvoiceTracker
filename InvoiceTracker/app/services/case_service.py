@@ -597,13 +597,11 @@ def get_case_detail(account_id, case_number):
         account_id=account_id
     ).first_or_404()
 
-    inv = (
-        Invoice.query.filter_by(case_id=case_obj.id).first()
-        or Invoice.query.filter_by(invoice_number=case_number).first_or_404()
-    )
+    # Invoice ma teraz bezpośredni account_id - bezpieczne query
+    inv = Invoice.query.filter_by(invoice_number=case_number, account_id=account_id).first_or_404()
 
     # Dowiaz fakture do sprawy jesli brak
-    if inv and not inv.case_id:
+    if not inv.case_id:
         inv.case_id = case_obj.id
         db.session.add(inv)
         db.session.commit()

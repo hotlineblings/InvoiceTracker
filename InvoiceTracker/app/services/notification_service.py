@@ -95,11 +95,8 @@ def send_manual_notification(account_id, case_number, stage):
                 'case_closed': False
             }
 
-        # Pobierz fakture
-        inv = (
-            Invoice.query.filter_by(case_id=case_obj.id).first()
-            or Invoice.query.filter_by(invoice_number=case_number).first()
-        )
+        # Pobierz fakture (Invoice ma teraz bezpośredni account_id dla izolacji)
+        inv = Invoice.query.filter_by(invoice_number=case_number, account_id=account_id).first()
 
         if not inv:
             return {
