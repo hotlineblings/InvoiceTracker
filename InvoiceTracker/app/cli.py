@@ -7,7 +7,7 @@ import click
 from datetime import datetime
 
 from .extensions import db
-from .models import Account, Case, Invoice, NotificationLog, SyncStatus, NotificationSettings, AccountScheduleSettings
+from .models import Account, Case, Invoice, NotificationLog, SyncStatus, NotificationSettings, AccountScheduleSettings, User
 
 
 def register_cli(app):
@@ -467,3 +467,316 @@ def register_cli(app):
         print("=" * 80)
         print("\nTeraz kazdy profil ma IDENTYCZNA strukture 5 etapow powiadomien")
         print("Panel ustawien dla wszystkich profili bedzie wygladal tak samo")
+
+    # ==========================================================================
+    # USER MANAGEMENT COMMANDS (Flask-Login integration)
+    # ==========================================================================
+
+    @app.cli.command('create-admin')
+    @click.option('--email', prompt='Admin email', help='Email address for admin user')
+    @click.option('--password', prompt='Admin password', hide_input=True,
+                  confirmation_prompt=True, help='Password for admin user')
+    @click.option('--grant-all-accounts', is_flag=True, default=True,
+                  help='Grant access to all existing active accounts')
+    def create_admin_cli(email, password, grant_all_accounts):
+        """
+        Creates admin user for the system.
+
+        Usage:
+            flask create-admin
+            flask create-admin --email admin@example.com --password secret
+            flask create-admin --no-grant-all-accounts
+        """
+        print("=" * 80)
+        print("TWORZENIE UZYTKOWNIKA")
+        print("=" * 80)
+
+        # Check if user already exists
+        existing = User.query.filter_by(email=email).first()
+        if existing:
+            print(f"\nBLAD: Uzytkownik z email '{email}' juz istnieje (ID: {existing.id})")
+            return
+
+        # Create user
+        user = User(email=email)
+        user.password = password  # Automatically hashed via setter
+        user.is_active = True
+
+        db.session.add(user)
+
+        # Grant access to all accounts if requested
+        if grant_all_accounts:
+            accounts = Account.query.filter_by(is_active=True).all()
+            for account in accounts:
+                user.accounts.append(account)
+            print(f"\nPrzyznano dostep do {len(accounts)} profili:")
+            for account in accounts:
+                print(f"   - {account.name}")
+        else:
+            print("\nNie przyznano dostepu do zadnych profili.")
+            print("Uzyj 'flask grant-account-access' aby przyznac dostep.")
+
+        db.session.commit()
+
+        print(f"\nUtworzono uzytkownika: {email}")
+        print(f"   ID: {user.id}")
+        print(f"   Aktywny: {user.is_active}")
+        print(f"   Liczba profili: {user.accounts.count()}")
+        print("\n" + "=" * 80)
+
+    @app.cli.command('grant-account-access')
+    @click.argument('user_email')
+    @click.argument('account_name')
+    def grant_account_access_cli(user_email, account_name):
+        """
+        Grants a user access to a specific account.
+
+        Usage:
+            flask grant-account-access user@example.com "Aquatest"
+        """
+        user = User.query.filter_by(email=user_email).first()
+        if not user:
+            print(f"BLAD: Uzytkownik '{user_email}' nie istnieje")
+            return
+
+        account = Account.query.filter_by(name=account_name).first()
+        if not account:
+            print(f"BLAD: Konto '{account_name}' nie istnieje")
+            print("\nDostepne konta:")
+            for acc in Account.query.all():
+                print(f"   - {acc.name}")
+            return
+
+        if user.has_access_to_account(account.id):
+            print(f"Uzytkownik '{user_email}' juz ma dostep do '{account_name}'")
+            return
+
+        user.accounts.append(account)
+        db.session.commit()
+
+        print(f"Przyznano uzytkownikowi '{user_email}' dostep do '{account_name}'")
+
+    @app.cli.command('revoke-account-access')
+    @click.argument('user_email')
+    @click.argument('account_name')
+    def revoke_account_access_cli(user_email, account_name):
+        """
+        Revokes user's access to a specific account.
+
+        Usage:
+            flask revoke-account-access user@example.com "Aquatest"
+        """
+        user = User.query.filter_by(email=user_email).first()
+        if not user:
+            print(f"BLAD: Uzytkownik '{user_email}' nie istnieje")
+            return
+
+        account = Account.query.filter_by(name=account_name).first()
+        if not account:
+            print(f"BLAD: Konto '{account_name}' nie istnieje")
+            return
+
+        if not user.has_access_to_account(account.id):
+            print(f"Uzytkownik '{user_email}' nie ma dostepu do '{account_name}'")
+            return
+
+        user.accounts.remove(account)
+        db.session.commit()
+
+        print(f"Odebrano uzytkownikowi '{user_email}' dostep do '{account_name}'")
+
+    @app.cli.command('list-users')
+    def list_users_cli():
+        """Lists all users and their account access."""
+        users = User.query.all()
+
+        if not users:
+            print("Brak uzytkownikow w systemie")
+            print("\nUzyj 'flask create-admin' aby utworzyc pierwszego uzytkownika")
+            return
+
+        print("=" * 80)
+        print("LISTA UZYTKOWNIKOW")
+        print("=" * 80)
+
+        for user in users:
+            accounts = user.get_accessible_accounts()
+            status = "Aktywny" if user.is_active else "Nieaktywny"
+            last_login = user.last_login_at.strftime('%Y-%m-%d %H:%M') if user.last_login_at else 'nigdy'
+
+            print(f"\n{user.email} (ID: {user.id}) - {status}")
+            print(f"   Utworzony: {user.created_at.strftime('%Y-%m-%d %H:%M')}")
+            print(f"   Ostatnie logowanie: {last_login}")
+            print(f"   Dostepne profile ({len(accounts)}):")
+            if accounts:
+                for account in accounts:
+                    print(f"      - {account.name}")
+            else:
+                print("      (brak)")
+
+        print("\n" + "=" * 80)
+
+    @app.cli.command('deactivate-user')
+    @click.argument('user_email')
+    def deactivate_user_cli(user_email):
+        """
+        Deactivates a user (prevents login).
+
+        Usage:
+            flask deactivate-user user@example.com
+        """
+        user = User.query.filter_by(email=user_email).first()
+        if not user:
+            print(f"BLAD: Uzytkownik '{user_email}' nie istnieje")
+            return
+
+        if not user.is_active:
+            print(f"Uzytkownik '{user_email}' jest juz dezaktywowany")
+            return
+
+        user.is_active = False
+        db.session.commit()
+
+        print(f"Dezaktywowano uzytkownika '{user_email}'")
+        print("Uzytkownik nie bedzie mogl sie zalogowac")
+
+    @app.cli.command('activate-user')
+    @click.argument('user_email')
+    def activate_user_cli(user_email):
+        """
+        Activates a previously deactivated user.
+
+        Usage:
+            flask activate-user user@example.com
+        """
+        user = User.query.filter_by(email=user_email).first()
+        if not user:
+            print(f"BLAD: Uzytkownik '{user_email}' nie istnieje")
+            return
+
+        if user.is_active:
+            print(f"Uzytkownik '{user_email}' jest juz aktywny")
+            return
+
+        user.is_active = True
+        db.session.commit()
+
+        print(f"Aktywowano uzytkownika '{user_email}'")
+
+    # ==========================================================================
+    # MULTI-PROVIDER MIGRATION COMMANDS
+    # ==========================================================================
+
+    @app.cli.command('migrate-credentials')
+    @click.option('--dry-run', is_flag=True, default=False,
+                  help='Preview changes without committing to database')
+    def migrate_credentials_cli(dry_run):
+        """
+        Migruje credentials z _infakt_api_key_encrypted do provider_settings (JSON).
+
+        Ten skrypt migruje dane z starego formatu (pojedyncza kolumna) do nowego formatu
+        (zaszyfrowany JSON) umożliwiającego obsługę wielu providerów.
+
+        Użycie lokalne:
+            flask migrate-credentials
+            flask migrate-credentials --dry-run
+
+        Na GCP App Engine (Cloud Shell):
+            gcloud app instances ssh <instance> --service default
+            cd /srv
+            flask migrate-credentials
+
+        Skrypt jest idempotentny - można uruchomić wielokrotnie, pominie już zmigrowane konta.
+        """
+        print("=" * 60)
+        print("MIGRACJA CREDENTIALS DO FORMATU MULTI-PROVIDER")
+        if dry_run:
+            print("MODE: DRY RUN (zmiany NIE zostana zapisane)")
+        print("=" * 60)
+
+        accounts = Account.query.all()
+        print(f"\nZnaleziono {len(accounts)} kont do sprawdzenia.")
+
+        migrated = 0
+        skipped = 0
+        no_credentials = 0
+        errors = []
+
+        for account in accounts:
+            print(f"\nKonto: {account.name} (ID: {account.id})")
+
+            # Sprawdź czy już zmigrowane (ma dane w nowym formacie)
+            if account._provider_settings_encrypted:
+                try:
+                    existing_settings = account.provider_settings
+                    if existing_settings and existing_settings.get('api_key'):
+                        print(f"   Pominieto - juz zmigrowane (provider_settings zawiera api_key)")
+                        skipped += 1
+                        continue
+                except Exception as e:
+                    print(f"   BLAD deszyfrowania istniejacych provider_settings: {e}")
+                    errors.append(f"{account.name}: {e}")
+                    continue
+
+            # Sprawdź czy ma dane w starym formacie
+            if not account._infakt_api_key_encrypted:
+                print(f"   Brak credentials do migracji")
+                no_credentials += 1
+                continue
+
+            # Pobierz odszyfrowany klucz ze starej kolumny
+            try:
+                cipher = Account._get_cipher()
+                api_key = cipher.decrypt(account._infakt_api_key_encrypted).decode()
+            except Exception as e:
+                print(f"   BLAD deszyfrowania starego klucza: {e}")
+                errors.append(f"{account.name}: {e}")
+                continue
+
+            if not api_key:
+                print(f"   Pusty klucz API")
+                no_credentials += 1
+                continue
+
+            # Zapisz w nowym formacie
+            if not dry_run:
+                account.provider_settings = {'api_key': api_key}
+                account.provider_type = 'infakt'
+
+            migrated += 1
+            # Maskuj klucz w logach (pokazuj tylko ostatnie 8 znaków)
+            masked_key = f"***{api_key[-8:]}" if len(api_key) > 8 else "***"
+            print(f"   {'[DRY RUN] ' if dry_run else ''}Zmigrowano: api_key ({masked_key})")
+
+        # Commit wszystkich zmian
+        if not dry_run:
+            db.session.commit()
+            print("\nZmiany zapisane w bazie danych.")
+        else:
+            db.session.rollback()
+            print("\nDRY RUN - zmiany NIE zostaly zapisane.")
+
+        print("\n" + "=" * 60)
+        print("PODSUMOWANIE MIGRACJI")
+        print("=" * 60)
+        print(f"   Zmigrowano: {migrated}")
+        print(f"   Pominieto (juz zmigrowane): {skipped}")
+        print(f"   Brak credentials: {no_credentials}")
+        print(f"   Bledy: {len(errors)}")
+        print(f"   Razem: {len(accounts)}")
+
+        if errors:
+            print("\n   BLEDY:")
+            for error in errors:
+                print(f"      - {error}")
+
+        if migrated > 0 and not dry_run:
+            print("\nMigracja zakonczona pomyslnie!")
+            print("\nKolejne kroki:")
+            print("   1. Przetestuj sync dla kazdego konta")
+            print("   2. Sprawdz logi aplikacji pod katem bledow")
+        elif dry_run:
+            print("\nAby wykonac migracje, uruchom bez --dry-run:")
+            print("   flask migrate-credentials")
+
+        print("\n" + "=" * 60)

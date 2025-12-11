@@ -16,11 +16,11 @@ def generate_email(stage, invoice, account):
         tuple: (subject, body_html)
     """
     stage_keys_map = {
-        "Przypomnienie o zblizajacym sie terminie platnosci": "stage_1",
-        "Powiadomienie o uplywie terminu platnosci": "stage_2",
-        "Wezwanie do zaplaty": "stage_3",
-        "Powiadomienie o zamiarze skierowania sprawy do windykatora zewnetrznego i publikacji na gieldzie wierzytelnosci": "stage_4",
-        "Przekazanie sprawy do windykatora zewnetrznego": "stage_5",
+        "Przypomnienie o zbliżającym się terminie płatności": "stage_1",
+        "Powiadomienie o upływie terminu płatności": "stage_2",
+        "Wezwanie do zapłaty": "stage_3",
+        "Powiadomienie o zamiarze skierowania sprawy do windykatora zewnętrznego i publikacji na giełdzie wierzytelności": "stage_4",
+        "Przekazanie sprawy do windykatora zewnętrznego": "stage_5",
     }
 
     # Jesli dostajemy np. "stage_2" to bierzemy od razu key=stage_2,

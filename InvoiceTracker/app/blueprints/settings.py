@@ -15,6 +15,16 @@ log = logging.getLogger(__name__)
 settings_bp = Blueprint('settings', __name__)
 
 
+def safe_int(value, default):
+    """Bezpieczna konwersja na int - zwraca default dla pustych stringów."""
+    if value is None or value == '':
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
 @settings_bp.route('/settings', methods=['GET', 'POST'])
 def settings_view():
     """
@@ -51,14 +61,17 @@ def settings_view():
 
         if form.validate_on_submit():
             try:
-                # === SEKCJA 1: API Key ===
+                # === SEKCJA 1: API Key (Multi-Provider) ===
                 api_key = request.form.get('infakt_api_key', '').strip()
                 if api_key:
-                    account.infakt_api_key = api_key
+                    # Zapisz w nowym formacie JSON (provider_settings)
+                    current_settings = account.provider_settings or {}
+                    current_settings['api_key'] = api_key
+                    account.provider_settings = current_settings
 
                 # === SEKCJA 2: Wysyłka powiadomień ===
-                mail_send_hour_utc = int(request.form.get('mail_send_hour', 7))
-                mail_send_minute_utc = int(request.form.get('mail_send_minute', 0))
+                mail_send_hour_utc = safe_int(request.form.get('mail_send_hour'), 7)
+                mail_send_minute_utc = safe_int(request.form.get('mail_send_minute'), 0)
                 schedule_settings.mail_send_hour = mail_send_hour_utc
                 schedule_settings.mail_send_minute = mail_send_minute_utc
                 schedule_settings.is_mail_enabled = request.form.get('is_mail_enabled') == 'on'
@@ -77,12 +90,12 @@ def settings_view():
                     NotificationSettings.update_settings(account_id, new_notification_settings)
 
                 # === SEKCJA 3: Synchronizacja ===
-                sync_hour_utc = int(request.form.get('sync_hour', 9))
-                sync_minute_utc = int(request.form.get('sync_minute', 0))
+                sync_hour_utc = safe_int(request.form.get('sync_hour'), 9)
+                sync_minute_utc = safe_int(request.form.get('sync_minute'), 0)
                 schedule_settings.sync_hour = sync_hour_utc
                 schedule_settings.sync_minute = sync_minute_utc
                 schedule_settings.is_sync_enabled = request.form.get('is_sync_enabled') == 'on'
-                schedule_settings.invoice_fetch_days_before = int(request.form.get('invoice_fetch_days_before', 1))
+                schedule_settings.invoice_fetch_days_before = safe_int(request.form.get('invoice_fetch_days_before'), 1)
 
                 # === SEKCJA 4: Dane firmowe ===
                 account.company_full_name = request.form.get('company_full_name', '').strip()

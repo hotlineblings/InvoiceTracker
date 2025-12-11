@@ -3,5 +3,9 @@ cron:
 - description: "Smart CRON - Sprawdza co godzinę które konta wymagają synchronizacji"
   url: /cron/run_sync
   schedule: every 1 hours
+
+- description: "Smart CRON - Sprawdza co godzinę które konta wymagają wysyłki maili"
+  url: /cron/run_mail
+  schedule: every 1 hours
 # --- END FILE: cron.yaml ---
 

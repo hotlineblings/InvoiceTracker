@@ -9,13 +9,13 @@ import urllib.parse
 from flask import Flask, session, request, redirect, url_for, flash
 from dotenv import load_dotenv
 
-from .extensions import db, migrate, csrf
+from .extensions import db, migrate, csrf, login_manager
 from .blueprints import register_blueprints
 from .cli import register_cli
 # Import wszystkich modeli - wymagane dla Alembic autogenerate
 from .models import (
     Account, AccountScheduleSettings, Case, Invoice,
-    NotificationLog, NotificationSettings, SyncStatus
+    NotificationLog, NotificationSettings, SyncStatus, User
 )
 
 load_dotenv()
@@ -55,9 +55,6 @@ def create_app(config_class=None):
 
     # Middleware i context processors
     _register_middleware(app)
-
-    # Start scheduler (tylko jeśli nie w trybie CLI)
-    _start_scheduler_if_needed(app)
 
     log.info("Instancja aplikacji Flask została utworzona.")
     return app
@@ -120,6 +117,14 @@ def _init_extensions(app):
     migrate.init_app(app, db)
     csrf.init_app(app)
 
+    # Flask-Login initialization
+    login_manager.init_app(app)
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        """Flask-Login user loader callback."""
+        return User.query.get(int(user_id))
+
     # Exempt tasks blueprint from CSRF (called by Cloud Tasks, not browser)
     from .blueprints.tasks import tasks_bp
     csrf.exempt(tasks_bp)
@@ -135,32 +140,57 @@ def _init_extensions(app):
 def _register_middleware(app):
     """Rejestruje middleware i context processors."""
     from .tenant_context import set_tenant, clear_tenant
+    from flask_login import current_user
 
     @app.context_processor
     def inject_active_accounts():
         """
-        Wstrzykuje listę aktywnych kont do wszystkich szablonów.
-        Potrzebne dla dropdown w navbarze.
+        Wstrzykuje listę dostępnych kont do wszystkich szablonów.
+        UPDATED: Filtruje po dostępie użytkownika (User.accounts).
         """
-        if session.get('logged_in'):
-            accounts = Account.query.filter_by(is_active=True).order_by(Account.name).all()
+        if current_user.is_authenticated:
+            # Zwróć tylko konta do których użytkownik ma dostęp
+            accounts = current_user.get_accessible_accounts()
             return dict(active_accounts=accounts)
         return dict(active_accounts=[])
+
+    @app.context_processor
+    def inject_current_account():
+        """
+        Wstrzykuje aktualnie wybrany Account do szablonów.
+        Uzywane dla:
+        - Wyswietlania statusu konfiguracji (is_fully_configured)
+        - Banerów onboardingowych
+        """
+        account_id = session.get('current_account_id')
+        if account_id:
+            account = Account.query.get(account_id)
+            return dict(current_account=account)
+        return dict(current_account=None)
 
     @app.before_request
     def require_login():
         """
         Wymaga logowania i wyboru profilu dla wszystkich endpointów
         poza publicznymi (login, select_account, static, cron).
+
+        3-KROKOWA LOGIKA BEZPIECZEŃSTWA:
+        1. Sprawdź autentykację (current_user.is_authenticated)
+        2. Sprawdź wybór profilu (session['current_account_id'])
+        3. Weryfikuj dostęp do wybranego profilu (has_access_to_account)
         """
         # Endpointy które nie wymagają logowania
         public_endpoints = {
             'static',
             'auth.login',
+            'auth.register',  # Rejestracja nowych użytkowników
             'auth.select_account',
             'auth.switch_account',
+            'auth.logout',
             'sync.cron_run_sync',
-            'tasks.run_sync_for_account'  # Cloud Tasks endpoint
+            'sync.cron_run_mail',  # Cloud Tasks CRON endpoint - mail
+            'tasks.run_sync_for_account',  # Cloud Tasks endpoint - sync
+            'tasks.run_mail_for_account'  # Cloud Tasks endpoint - mail
         }
 
         # Sprawdź czy to endpoint publiczny
@@ -172,14 +202,27 @@ def _register_middleware(app):
         if is_cli_bp:
             return None
 
-        # Sprawdź logowanie
-        if not session.get('logged_in'):
+        # KROK 1: Sprawdź autentykację (NAJPIERW!)
+        if not current_user.is_authenticated:
+            # Wyczyść ewentualne śmieci z sesji
+            session.pop('current_account_id', None)
+            session.pop('current_account_name', None)
+            session.pop('logged_in', None)
             flash("Musisz się zalogować, aby uzyskać dostęp.", "warning")
             return redirect(url_for('auth.login'))
 
-        # Sprawdź wybór profilu
+        # KROK 2: Sprawdź wybór profilu
         if not session.get('current_account_id'):
             flash("Wybierz profil aby kontynuować.", "warning")
+            return redirect(url_for('auth.select_account'))
+
+        # KROK 3: Weryfikuj dostęp do wybranego profilu (BEZWARUNKOWE)
+        account_id = session.get('current_account_id')
+        if not current_user.has_access_to_account(account_id):
+            log.warning(f"Security Alert: User {current_user.id} tried accessing unauthorized account {account_id}")
+            session.pop('current_account_id', None)
+            session.pop('current_account_name', None)
+            flash("Brak dostępu do tego profilu.", "danger")
             return redirect(url_for('auth.select_account'))
 
     @app.before_request
@@ -193,24 +236,3 @@ def _register_middleware(app):
     def clear_tenant_context(exception=None):
         """Czyści kontekst tenanta po zakończeniu requestu."""
         clear_tenant()
-
-
-def _start_scheduler_if_needed(app):
-    """Uruchamia scheduler jeśli to wymagane."""
-    # Nie uruchamiaj schedulera w trybie CLI lub testowym
-    if os.environ.get('FLASK_CLI') or os.environ.get('TESTING'):
-        return
-
-    try:
-        from .services.scheduler import start_scheduler
-
-        log.info("Start schedulera...")
-        if callable(start_scheduler):
-            start_scheduler(app)
-            log.info("Scheduler zainicjalizowany.")
-        else:
-            log.warning("start_scheduler nie jest wywoływalny.")
-    except ImportError as e:
-        log.warning(f"Nie można zaimportować start_scheduler: {e}")
-    except Exception as e:
-        log.error(f"Błąd startu schedulera: {e}", exc_info=True)

@@ -952,6 +952,16 @@
             </button>
           </li>
 
+          <!-- User Email Display -->
+          {% if current_user.is_authenticated %}
+          <li class="nav-item ms-2">
+            <span class="nav-link" style="cursor: default; opacity: 0.8;">
+              <i class="bi bi-person me-1"></i>
+              {{ current_user.email }}
+            </span>
+          </li>
+          {% endif %}
+
           <!-- Logout -->
           <li class="nav-item ms-2">
             <a class="nav-link" href="{{ url_for('auth.logout') }}">

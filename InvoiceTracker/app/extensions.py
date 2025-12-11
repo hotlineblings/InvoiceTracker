@@ -6,6 +6,7 @@ import logging
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
+from flask_login import LoginManager
 from sqlalchemy import event
 from sqlalchemy.orm import with_loader_criteria
 
@@ -14,6 +15,12 @@ log = logging.getLogger(__name__)
 db = SQLAlchemy()
 migrate = Migrate()
 csrf = CSRFProtect()
+
+# Flask-Login configuration
+login_manager = LoginManager()
+login_manager.login_view = 'auth.login'
+login_manager.login_message = 'Musisz sie zalogowac, aby uzyskac dostep.'
+login_manager.login_message_category = 'warning'
 
 # Modele wymagające filtrowania po account_id
 TENANT_MODELS: set = set()

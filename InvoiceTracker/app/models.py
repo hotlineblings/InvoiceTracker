@@ -6,7 +6,12 @@ from datetime import datetime
 from cryptography.fernet import Fernet
 from collections import OrderedDict
 import base64
+import json
+import logging
 import os
+
+from flask_login import UserMixin
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from .extensions import db
 from .constants import CANONICAL_NOTIFICATION_STAGES
@@ -112,6 +117,7 @@ class SyncStatus(db.Model):
     """
     Model SyncStatus – rejestruje informacje o przebiegu synchronizacji:
       - account_id: ID profilu/konta dla którego wykonano synchronizację (multi-tenancy)
+      - sync_number: numer synchronizacji PER KONTO (zaczyna od 1 dla każdego konta)
       - sync_type: typ synchronizacji ("new", "update", "full")
       - processed: liczba przetworzonych faktur (ŁĄCZNIE new + update)
       - timestamp: data wykonania synchronizacji
@@ -130,6 +136,8 @@ class SyncStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     # MULTI-TENANCY: Powiązanie z kontem (NOT NULL - wymagane dla tenant isolation)
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False, index=True)
+    # Numer synchronizacji per konto (zaczyna od 1 dla każdego konta)
+    sync_number = db.Column(db.Integer, nullable=False, default=1)
     sync_type = db.Column(db.String(50))
     processed = db.Column(db.Integer)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
@@ -145,8 +153,14 @@ class SyncStatus(db.Model):
     new_sync_duration = db.Column(db.Float, default=0.0)
     update_sync_duration = db.Column(db.Float, default=0.0)
 
+    @classmethod
+    def get_next_sync_number(cls, account_id):
+        """Zwraca następny numer synchronizacji dla danego konta."""
+        max_num = db.session.query(db.func.max(cls.sync_number)).filter_by(account_id=account_id).scalar()
+        return (max_num or 0) + 1
+
     def __repr__(self):
-        return f'<SyncStatus {self.sync_type}: {self.processed} faktur, {self.duration:.2f}s>'
+        return f'<SyncStatus #{self.sync_number} {self.sync_type}: {self.processed} faktur, {self.duration:.2f}s>'
 
 
 class NotificationSettings(db.Model):
@@ -268,11 +282,74 @@ class NotificationSettings(db.Model):
         return normalized
 
 
+# Association table for User <-> Account many-to-many relationship
+account_users = db.Table(
+    'account_users',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('account_id', db.Integer, db.ForeignKey('account.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('created_at', db.DateTime, default=datetime.utcnow)
+)
+
+
+class User(UserMixin, db.Model):
+    """
+    Model User - reprezentuje uzytkownika systemu.
+
+    Integracja z Flask-Login poprzez UserMixin.
+    Relacja Many-to-Many z Account (profilami firmowymi).
+
+    UWAGA: Brak rol/uprawnien - powiazanie z Account oznacza pelny dostep.
+    """
+    __tablename__ = 'user'
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    _password_hash = db.Column('password_hash', db.String(255), nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login_at = db.Column(db.DateTime, nullable=True)
+
+    # Many-to-Many relationship with Account
+    accounts = db.relationship(
+        'Account',
+        secondary=account_users,
+        lazy='dynamic',
+        backref=db.backref('users', lazy='dynamic')
+    )
+
+    @property
+    def password(self):
+        """Password is write-only."""
+        raise AttributeError('password is not readable')
+
+    @password.setter
+    def password(self, value):
+        """Hash password on assignment."""
+        self._password_hash = generate_password_hash(value)
+
+    def check_password(self, password):
+        """Verify password against hash."""
+        return check_password_hash(self._password_hash, password)
+
+    def has_access_to_account(self, account_id):
+        """Check if user has access to specific account."""
+        return self.accounts.filter_by(id=account_id).first() is not None
+
+    def get_accessible_accounts(self):
+        """Return list of accounts user can access."""
+        return self.accounts.filter_by(is_active=True).order_by(Account.name).all()
+
+    def __repr__(self):
+        return f'<User {self.email} (ID: {self.id})>'
+
+
 class Account(db.Model):
     """
     Model Account - reprezentuje profil/konto (np. Aquatest, Pozytron Szkolenia).
     Każdy profil ma własne ustawienia API i SMTP.
     Wrażliwe dane (API keys, hasła) są szyfrowane przy użyciu Fernet.
+
+    MULTI-TENANCY: Many-to-Many z User poprzez account_users.
     """
     __tablename__ = 'account'
 
@@ -280,14 +357,20 @@ class Account(db.Model):
     name = db.Column(db.String(200), unique=True, nullable=False)
 
     # API Configuration (zaszyfrowane)
-    _infakt_api_key_encrypted = db.Column('infakt_api_key', db.LargeBinary, nullable=False)
+    # NULLABLE: Umozliwia rejestracje bez konfiguracji (uzupelni w Settings)
+    _infakt_api_key_encrypted = db.Column('infakt_api_key', db.LargeBinary, nullable=True)
+
+    # Multi-Provider Credentials (zaszyfrowany JSON)
+    # Format: {"api_key": "xyz"} dla InFakt, {"login": "user", "password": "pass"} dla wFirma
+    _provider_settings_encrypted = db.Column('provider_settings', db.LargeBinary, nullable=True)
 
     # SMTP Configuration
-    _smtp_server = db.Column('smtp_server', db.String(100), nullable=False)
-    _smtp_port = db.Column('smtp_port', db.Integer, nullable=False, default=587)
-    _smtp_username_encrypted = db.Column('smtp_username', db.LargeBinary, nullable=False)
-    _smtp_password_encrypted = db.Column('smtp_password', db.LargeBinary, nullable=False)
-    _email_from = db.Column('email_from', db.String(200), nullable=False)
+    # NULLABLE: Umozliwia rejestracje bez konfiguracji (uzupelni w Settings)
+    _smtp_server = db.Column('smtp_server', db.String(100), nullable=True)
+    _smtp_port = db.Column('smtp_port', db.Integer, nullable=True, default=587)
+    _smtp_username_encrypted = db.Column('smtp_username', db.LargeBinary, nullable=True)
+    _smtp_password_encrypted = db.Column('smtp_password', db.LargeBinary, nullable=True)
+    _email_from = db.Column('email_from', db.String(200), nullable=True)
 
     # Company details for email templates (niezaszyfrowane)
     company_full_name = db.Column(db.String(500), nullable=True)
@@ -317,8 +400,21 @@ class Account(db.Model):
         return Fernet(key)
 
     @property
-    def infakt_api_key(self):
-        """Decrypts and returns InFakt API key"""
+    def infakt_api_key(self) -> str | None:
+        """
+        DEPRECATED: Użyj provider_settings['api_key'] zamiast tego property.
+
+        Backward compatibility - czyta najpierw z nowego formatu JSON,
+        potem fallback na starą kolumnę.
+        """
+        # Najpierw sprawdź nowy format (provider_settings)
+        settings = self.provider_settings
+        if settings and self.provider_type == 'infakt':
+            api_key = settings.get('api_key')
+            if api_key:
+                return api_key
+
+        # Fallback na starą kolumnę (migracja w toku)
         if self._infakt_api_key_encrypted:
             cipher = self._get_cipher()
             return cipher.decrypt(self._infakt_api_key_encrypted).decode()
@@ -326,9 +422,43 @@ class Account(db.Model):
 
     @infakt_api_key.setter
     def infakt_api_key(self, value):
-        """Encrypts and stores InFakt API key"""
+        """
+        DEPRECATED: Użyj provider_settings = {'api_key': value} zamiast tego.
+
+        Backward compatibility - zapisuje do starej kolumny.
+        """
         cipher = self._get_cipher()
         self._infakt_api_key_encrypted = cipher.encrypt(value.encode())
+
+    # =========================================================================
+    # Multi-Provider Credentials (JSON)
+    # =========================================================================
+
+    @property
+    def provider_settings(self) -> dict | None:
+        """Deszyfruje i zwraca credentials providera jako dict."""
+        if self._provider_settings_encrypted:
+            try:
+                cipher = self._get_cipher()
+                decrypted = cipher.decrypt(self._provider_settings_encrypted).decode()
+                return json.loads(decrypted)
+            except (json.JSONDecodeError, Exception) as e:
+                # Loguj błąd, ale nie crashuj - zwróć None i pozwól na ponowną konfigurację
+                logging.getLogger(__name__).error(
+                    f"Failed to decrypt/parse provider_settings for Account {self.id}: {e}"
+                )
+                return None
+        return None
+
+    @provider_settings.setter
+    def provider_settings(self, value: dict | None):
+        """Szyfruje i zapisuje credentials providera jako JSON."""
+        if value is None:
+            self._provider_settings_encrypted = None
+            return
+        cipher = self._get_cipher()
+        json_str = json.dumps(value)
+        self._provider_settings_encrypted = cipher.encrypt(json_str.encode())
 
     @property
     def smtp_username(self):
@@ -381,6 +511,40 @@ class Account(db.Model):
     @email_from.setter
     def email_from(self, value):
         self._email_from = value
+
+    # =========================================================================
+    # Configuration Status Properties (for Lazy Validation / Onboarding)
+    # =========================================================================
+
+    @property
+    def is_provider_configured(self) -> bool:
+        """Sprawdza czy credentials dla providera są kompletne."""
+        from .constants import REQUIRED_CREDENTIALS  # Import wewnątrz - unika cyklicznych importów
+
+        settings = self.provider_settings
+        if not settings:
+            # Fallback dla migracji w toku (stara kolumna)
+            if self.provider_type == 'infakt' and self._infakt_api_key_encrypted:
+                return True
+            return False
+
+        required = REQUIRED_CREDENTIALS.get(self.provider_type, [])
+        return all(settings.get(key) for key in required)
+
+    @property
+    def is_smtp_configured(self):
+        """Sprawdza czy SMTP jest skonfigurowany."""
+        return all([
+            self._smtp_server,
+            self._smtp_username_encrypted,
+            self._smtp_password_encrypted,
+            self._email_from
+        ])
+
+    @property
+    def is_fully_configured(self):
+        """Sprawdza czy konto jest w pelni skonfigurowane (API + SMTP)."""
+        return self.is_provider_configured and self.is_smtp_configured
 
     def __repr__(self):
         return f'<Account {self.name} (ID: {self.id}, Active: {self.is_active})>'

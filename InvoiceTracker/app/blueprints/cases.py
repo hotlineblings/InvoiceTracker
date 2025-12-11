@@ -6,6 +6,7 @@ import logging
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session
 
+from ..models import Account
 from ..services import case_service, notification_service, payment_service
 from ..forms import MarkPaidForm, SendManualForm, ReopenCaseForm, ManualSyncForm
 
@@ -154,6 +155,12 @@ def send_manual():
     if not account_id:
         flash("Wybierz profil.", "warning")
         return redirect(url_for('auth.select_account'))
+
+    # LAZY VALIDATION: Sprawdz czy konto ma skonfigurowany SMTP
+    account = Account.query.get(account_id)
+    if account and not account.is_smtp_configured:
+        flash("Skonfiguruj najpierw SMTP w ustawieniach, aby wysylac powiadomienia.", "warning")
+        return redirect(url_for('settings.settings_view'))
 
     if form.validate_on_submit():
         case_number = form.case_number.data

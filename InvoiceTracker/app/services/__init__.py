@@ -8,7 +8,7 @@ from .mail_utils import generate_email
 
 # Sync services
 from .update_db import sync_new_invoices, update_existing_cases, run_full_sync
-from .scheduler import start_scheduler, run_mail_for_single_account
+from .scheduler import run_mail_for_single_account
 
 # Business logic services (NEW - Service Layer)
 from . import case_service

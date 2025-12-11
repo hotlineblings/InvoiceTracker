@@ -99,7 +99,14 @@ def send_email_for_account(account, to_email, subject, body, html=False):
 
     Returns:
         bool: True jesli wyslano pomyslnie, False w przeciwnym razie
+
+    Raises:
+        ValueError: Jesli konto nie ma skonfigurowanego SMTP
     """
+    # LAZY VALIDATION: Sprawdz czy konto ma skonfigurowany SMTP
+    if not account.is_smtp_configured:
+        raise ValueError(f"Account '{account.name}' nie ma skonfigurowanego SMTP. Uzupelnij konfiguracje w ustawieniach.")
+
     try:
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject

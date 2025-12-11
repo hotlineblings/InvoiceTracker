@@ -107,7 +107,7 @@
         <tbody>
           {% for s in statuses %}
           <tr>
-            <td>{{ s.id }}</td>
+            <td>{{ s.sync_number }}</td>
             <td>
               <span class="badge-custom {% if s.sync_type == 'full' %}badge-success{% elif s.sync_type == 'new' %}badge-primary{% else %}badge-secondary{% endif %}">
                 {{ SYNC_TYPE_DISPLAY.get(s.sync_type, s.sync_type) }}

@@ -5,6 +5,7 @@ Na GAE uzywa Google Cloud Tasks API, lokalnie symuluje przez HTTP POST.
 import os
 import logging
 import json
+import threading
 
 log = logging.getLogger(__name__)
 
@@ -22,9 +23,17 @@ def is_gae_environment() -> bool:
 def get_app_url() -> str:
     """Zwraca bazowy URL aplikacji."""
     if is_gae_environment():
-        # Na GAE - uzyj domeny aplikacji
-        project_id = os.environ.get('GOOGLE_CLOUD_PROJECT', 'invoicetracker-451108')
-        return f"https://{project_id}.ew.r.appspot.com"
+        # Na GAE - uzyj GAE_APPLICATION lub fallback
+        # Format GAE_APPLICATION: "e~project-id" lub "s~project-id"
+        gae_app = os.environ.get('GAE_APPLICATION', '')
+        if gae_app:
+            # Wyciagnij project_id (po ~)
+            project_id = gae_app.split('~')[-1] if '~' in gae_app else gae_app
+        else:
+            project_id = os.environ.get('GOOGLE_CLOUD_PROJECT', 'invoicetracker-451108')
+
+        # Uzyj poprawnego URL (ey = europe region dla App Engine)
+        return f"https://{project_id}.ey.r.appspot.com"
     else:
         # Lokalnie - localhost
         port = os.environ.get('PORT', '8080')
@@ -86,15 +95,89 @@ def _enqueue_cloud_task(target_url: str, payload: dict) -> bool:
 
 
 def _enqueue_local_task(target_url: str, payload: dict) -> bool:
-    """Symuluje Cloud Tasks przez lokalny HTTP POST."""
-    from .local_http_client import send_local_post
+    """
+    Lokalny odpowiednik Cloud Tasks - wykonuje sync bezposrednio w osobnym watku.
 
-    log.info(f"[CloudTasks] LOCAL MODE: Sending POST to {target_url}")
+    Na produkcji (GAE) Cloud Tasks wywoluje endpoint HTTP asynchronicznie.
+    Lokalnie symulujemy to przez uruchomienie funkcji sync w tle.
+    """
+    from flask import current_app
+    from .update_db import run_full_sync
+    from ..tenant_context import tenant_context
 
-    # Dodaj naglowek symulujacy Cloud Tasks
-    headers = {
-        'X-AppEngine-QueueName': 'local-dev-queue',
-        'X-CloudTasks-TaskName': f'local-sync-{payload.get("account_id")}'
+    account_id = payload.get('account_id')
+    task_type = payload.get('task_type', 'full')
+
+    log.info(f"[CloudTasks] LOCAL MODE: Starting background thread for account_id={account_id}")
+
+    def run_sync_in_thread():
+        """Wykonuje sync w kontekscie aplikacji Flask."""
+        # Potrzebujemy kontekstu aplikacji dla operacji DB
+        app = current_app._get_current_object()
+        with app.app_context():
+            try:
+                # Ustaw tenant context dla tego watku
+                with tenant_context(account_id):
+                    log.info(f"[CloudTasks] Thread started: {task_type} sync for account_id={account_id}")
+                    processed = run_full_sync(account_id)
+                    log.info(f"[CloudTasks] Thread completed: {task_type} sync for account_id={account_id}, processed={processed}")
+            except Exception as e:
+                log.error(f"[CloudTasks] Thread error for account_id={account_id}: {e}", exc_info=True)
+
+    try:
+        thread = threading.Thread(target=run_sync_in_thread, daemon=True)
+        thread.start()
+        log.info(f"[CloudTasks] LOCAL MODE: Thread started for account_id={account_id}")
+        return True
+    except Exception as e:
+        log.error(f"[CloudTasks] LOCAL MODE: Failed to start thread: {e}", exc_info=True)
+        return False
+
+
+def enqueue_mail_task(account_id: int) -> bool:
+    """
+    Kolejkuje zadanie wysylki maili dla konta.
+
+    Na GAE: Tworzy task w Cloud Tasks queue
+    Lokalnie: Uruchamia w osobnym watku
+    """
+    payload = {
+        'account_id': account_id,
+        'task_type': 'mail'
     }
 
-    return send_local_post(target_url, payload, headers)
+    target_url = f"{get_app_url()}/tasks/run_mail_for_account"
+
+    if is_gae_environment():
+        return _enqueue_cloud_task(target_url, payload)
+    else:
+        return _enqueue_local_mail_task(payload)
+
+
+def _enqueue_local_mail_task(payload: dict) -> bool:
+    """
+    Lokalny odpowiednik Cloud Tasks dla maili.
+    """
+    from flask import current_app
+    from .scheduler import run_mail_for_single_account
+
+    account_id = payload.get('account_id')
+
+    log.info(f"[CloudTasks] LOCAL MODE: Starting mail thread for account_id={account_id}")
+
+    def run_mail_in_thread():
+        app = current_app._get_current_object()
+        with app.app_context():
+            try:
+                run_mail_for_single_account(app, account_id)
+                log.info(f"[CloudTasks] Mail thread completed for account_id={account_id}")
+            except Exception as e:
+                log.error(f"[CloudTasks] Mail thread error for account_id={account_id}: {e}", exc_info=True)
+
+    try:
+        thread = threading.Thread(target=run_mail_in_thread, daemon=True)
+        thread.start()
+        return True
+    except Exception as e:
+        log.error(f"[CloudTasks] Failed to start mail thread: {e}", exc_info=True)
+        return False

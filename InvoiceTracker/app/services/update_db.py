@@ -21,7 +21,7 @@ if not logging.getLogger().handlers:
 def sync_new_invoices(account_id, start_offset=0, limit=100):
     """
     Pobiera nowe faktury z inFaktu (termin platnosci za X dni), tworzy Invoice i Case.
-    Uzywa tylko faktur 'sent'/'printed'.
+    Uzywa tylko faktur 'sent' (wyslanych elektronicznie).
     Dane klienta (email, NIP, adres, nazwa firmy) sa **zawsze** pobierane przez /clients/{id}.json.
 
     Args:
@@ -56,7 +56,7 @@ def sync_new_invoices(account_id, start_offset=0, limit=100):
     offset = start_offset
     start_time = datetime.utcnow()
 
-    log.info(f"[sync_new_invoices] Start dla konta '{account.name}' (ID: {account_id}): szukanie faktur ('sent'/'printed') z terminem {new_case_due_date_str} [{days_ahead} dni przed terminem]. Offset={offset}.")
+    log.info(f"[sync_new_invoices] Start dla konta '{account.name}' (ID: {account_id}): szukanie faktur ('sent') z terminem {new_case_due_date_str} [{days_ahead} dni przed terminem]. Offset={offset}.")
 
     while True:
         # Używamy znormalizowanych query_params - provider mapuje je na format API
@@ -71,7 +71,7 @@ def sync_new_invoices(account_id, start_offset=0, limit=100):
             log.info(f"[sync_new_invoices] Brak faktur lub blad API (offset={offset}). Przerywam petle.")
             break
 
-        batch_invoices_filtered = [inv for inv in batch_invoices if inv.get('status') in ('sent', 'printed')]
+        batch_invoices_filtered = [inv for inv in batch_invoices if inv.get('status') == 'sent']
 
         log.info(f"[sync_new_invoices] API zwrocilo {len(batch_invoices)} faktur, po filtracji statusu: {len(batch_invoices_filtered)} (offset={offset}).")
         if not batch_invoices_filtered:
@@ -179,7 +179,7 @@ def sync_new_invoices(account_id, start_offset=0, limit=100):
                 db.session.add(new_inv)
                 db.session.commit()
 
-                if new_inv.left_to_pay > 0 and new_inv.status in ('sent', 'printed'):
+                if new_inv.left_to_pay > 0 and new_inv.status == 'sent':
                     existing_case = db.session.query(Case.id).filter_by(case_number=new_inv.invoice_number, account_id=account_id).scalar()
                     if not existing_case:
                         new_case = Case(
@@ -454,8 +454,10 @@ def run_full_sync(account_id):
     duration = (datetime.utcnow() - start_time).total_seconds()
 
     try:
+        next_sync_num = SyncStatus.get_next_sync_number(account_id)
         sync_record = SyncStatus(
             account_id=account_id,
+            sync_number=next_sync_num,
             sync_type="full",
             processed=total_processed_records,
             duration=duration,
@@ -470,7 +472,7 @@ def run_full_sync(account_id):
         )
         db.session.add(sync_record)
         db.session.commit()
-        log.info(f"[run_full_sync] Zapisano status synchronizacji (1 rekord 'full')")
+        log.info(f"[run_full_sync] Zapisano status synchronizacji #{next_sync_num} (typ: 'full')")
     except Exception as db_err:
         log.error(f"[run_full_sync] Blad zapisu statusu pelnej synchronizacji: {db_err}", exc_info=True)
         db.session.rollback()

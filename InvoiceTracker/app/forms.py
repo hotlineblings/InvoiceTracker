@@ -5,7 +5,7 @@ Wszystkie formularze POST w aplikacji dziedziczą po FlaskForm.
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, BooleanField, IntegerField, HiddenField
 from wtforms.fields import EmailField
-from wtforms.validators import DataRequired, Email, Optional, NumberRange, Length
+from wtforms.validators import DataRequired, Email, Optional, NumberRange, Length, EqualTo
 
 
 # =============================================================================
@@ -13,14 +13,59 @@ from wtforms.validators import DataRequired, Email, Optional, NumberRange, Lengt
 # =============================================================================
 
 class LoginForm(FlaskForm):
-    """Formularz logowania administratora."""
-    username = StringField('Login', validators=[DataRequired(message="Login jest wymagany")])
+    """Formularz logowania uzytkownika."""
+    email = EmailField(
+        'Email',
+        validators=[
+            DataRequired(message="Email jest wymagany"),
+            Email(message="Nieprawidlowy format email")
+        ]
+    )
     password = PasswordField('Hasło', validators=[DataRequired(message="Hasło jest wymagane")])
 
 
 class SwitchAccountForm(FlaskForm):
     """Formularz przełączania między profilami (konta firmowe)."""
     account_id = HiddenField('Account ID', validators=[DataRequired()])
+
+
+class RegistrationForm(FlaskForm):
+    """
+    Formularz rejestracji nowego uzytkownika i firmy.
+    Tworzy User + Account w jednej transakcji.
+    """
+    email = EmailField(
+        'Email',
+        validators=[
+            DataRequired(message="Email jest wymagany"),
+            Email(message="Nieprawidlowy format email")
+        ]
+    )
+    password = PasswordField(
+        'Haslo',
+        validators=[
+            DataRequired(message="Haslo jest wymagane"),
+            Length(min=8, message="Haslo musi miec minimum 8 znakow")
+        ]
+    )
+    confirm_password = PasswordField(
+        'Potwierdz haslo',
+        validators=[
+            DataRequired(message="Potwierdzenie hasla jest wymagane"),
+            EqualTo('password', message="Hasla musza byc identyczne")
+        ]
+    )
+    company_name = StringField(
+        'Nazwa firmy',
+        validators=[
+            DataRequired(message="Nazwa firmy jest wymagana"),
+            Length(min=2, max=200, message="Nazwa firmy musi miec 2-200 znakow")
+        ]
+    )
+    nip = StringField(
+        'NIP (opcjonalnie)',
+        validators=[Optional(), Length(max=20)]
+    )
 
 
 # =============================================================================

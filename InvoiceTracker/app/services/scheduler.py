@@ -1,14 +1,13 @@
-# scheduler.py - APScheduler service
+# scheduler.py - Mail service functions
+# APScheduler usuniety - uzywa Cron + Cloud Tasks
 from datetime import datetime, timedelta, date
 import time
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.events import EVENT_SCHEDULER_SHUTDOWN
 from dotenv import load_dotenv
 
 from ..extensions import db
 from ..models import Invoice, NotificationLog, Case, NotificationSettings, Account, AccountScheduleSettings
 from ..tenant_context import tenant_context, sudo
-from .send_email import send_email_for_account, close_smtp_connection
+from .send_email import send_email_for_account
 from .mail_utils import generate_email
 
 load_dotenv()
@@ -16,22 +15,13 @@ load_dotenv()
 
 def stage_to_number(text):
     mapping = {
-        "Przypomnienie o zblizajacym sie terminie platnosci": 1,
-        "Powiadomienie o uplywie terminu platnosci": 2,
-        "Wezwanie do zaplaty": 3,
-        "Powiadomienie o zamiarze skierowania sprawy do windykatora zewnetrznego i publikacji na gieldzie wierzytelnosci": 4,
-        "Przekazanie sprawy do windykatora zewnetrznego": 5
+        "Przypomnienie o zbliżającym się terminie płatności": 1,
+        "Powiadomienie o upływie terminu płatności": 2,
+        "Wezwanie do zapłaty": 3,
+        "Powiadomienie o zamiarze skierowania sprawy do windykatora zewnętrznego i publikacji na giełdzie wierzytelności": 4,
+        "Przekazanie sprawy do windykatora zewnętrznego": 5
     }
     return mapping.get(text, 0)
-
-
-def run_sync_with_context(app):
-    """
-    Usuwamy stara funkcje update_database, wiec nic tu nie robimy,
-    albo usuwamy te funkcje calkowicie z harmonogramu.
-    """
-    with app.app_context():
-        print("[scheduler] run_sync_with_context() - brak starej logiki")
 
 
 def run_mail_for_single_account(app, account_id):
@@ -163,7 +153,7 @@ def run_mail_for_single_account(app, account_id):
                     stage5_log = NotificationLog.query.filter_by(
                         invoice_number=inv.invoice_number,
                         account_id=account.id,
-                        stage="Przekazanie sprawy do windykatora zewnetrznego"
+                        stage="Przekazanie sprawy do windykatora zewnętrznego"
                     ).first()
 
                     if stage5_log:
@@ -181,50 +171,3 @@ def run_mail_for_single_account(app, account_id):
 
         # Summary
         print(f"[scheduler] KONIEC dla konta '{account.name}': Wyslano {processed_count} powiadomien, bledow: {error_count}")
-
-
-def start_scheduler(app):
-    """
-    Inicjuje scheduler z dynamicznymi jobami per-profil.
-    Dla kazdego aktywnego konta tworzy osobny job o czasie okreslonym w AccountScheduleSettings.
-    """
-    scheduler = BackgroundScheduler()
-
-    with app.app_context():
-        # Pobierz wszystkie aktywne konta (sudo - Account nie ma account_id)
-        with sudo():
-            active_accounts = Account.query.filter_by(is_active=True).all()
-
-        print(f"[scheduler] Inicjalizacja schedulera dla {len(active_accounts)} aktywnych kont...")
-
-        for account in active_accounts:
-            # Użyj tenant_context dla pobierania ustawień
-            with tenant_context(account.id):
-                settings = AccountScheduleSettings.get_for_account(account.id)
-
-            if not settings.is_mail_enabled:
-                print(f"[scheduler] Pomijam konto '{account.name}' - wysylka wylaczona")
-                continue
-
-            # Dodaj job dla tego konta
-            scheduler.add_job(
-                func=lambda acc_id=account.id: run_mail_for_single_account(app, acc_id),
-                trigger='cron',
-                hour=settings.mail_send_hour,
-                minute=settings.mail_send_minute,
-                id=f'mail_account_{account.id}',
-                name=f'Mail: {account.name}',
-                replace_existing=True,
-                misfire_grace_time=300  # 5 minut tolerancji
-            )
-
-            print(f"[scheduler] Job dodany: '{account.name}' -> {settings.mail_send_hour:02d}:{settings.mail_send_minute:02d} UTC")
-
-    # Handler zamykajacy SMTP przy wylaczeniu schedulera
-    def shutdown_handler(event):
-        close_smtp_connection()
-
-    scheduler.add_listener(shutdown_handler, EVENT_SCHEDULER_SHUTDOWN)
-    scheduler.start()
-
-    print("[scheduler] Scheduler uruchomiony z dynamicznymi jobami per-profil")

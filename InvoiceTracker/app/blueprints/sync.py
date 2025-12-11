@@ -2,6 +2,7 @@
 Blueprint synchronizacji.
 Reczna synchronizacja, CRON endpoint, status synchronizacji, diagnostyka maili.
 """
+import os
 import logging
 from datetime import date, datetime, timedelta, timezone as dt_timezone, time as dt_time
 from zoneinfo import ZoneInfo
@@ -10,7 +11,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 
 from ..models import Account, SyncStatus, AccountScheduleSettings
 from ..services import diagnostic_service
-from ..services.cloud_tasks import enqueue_sync_task
+from ..services.cloud_tasks import enqueue_sync_task, enqueue_mail_task
 from ..forms import ManualSyncForm
 
 log = logging.getLogger(__name__)
@@ -30,6 +31,12 @@ def manual_sync():
     if not account_id:
         flash("Wybierz profil przed synchronizacja.", "warning")
         return redirect(url_for('auth.select_account'))
+
+    # LAZY VALIDATION: Sprawdz czy konto ma skonfigurowany API provider
+    account = Account.query.get(account_id)
+    if account and not account.is_provider_configured:
+        flash("Skonfiguruj najpierw klucz API w ustawieniach, aby uruchomic synchronizacje.", "warning")
+        return redirect(url_for('settings.settings_view'))
 
     if form.validate_on_submit():
         account_name = session.get('current_account_name', f'ID:{account_id}')
@@ -54,9 +61,18 @@ def cron_run_sync():
     i uruchamia sync tylko dla nich.
     """
     is_cron_request = request.headers.get('X-Appengine-Cron') == 'true'
+
+    # W srodowisku lokalnym pozwol na wywolanie CRON endpoint
+    # gdy ustawiono ALLOW_LOCAL_CRON=true w .env
+    is_local_dev = os.environ.get('GAE_ENV') != 'standard'
+    allow_local_cron = os.environ.get('ALLOW_LOCAL_CRON', 'false').lower() == 'true'
+
     if not is_cron_request:
-        log.warning("Nieautoryzowana proba wywolania /cron/run_sync (nie z Cron).")
-        return jsonify({"status": "ignored", "message": "Request not from App Engine Cron"}), 200
+        if is_local_dev and allow_local_cron:
+            log.info("[Smart CRON] LOCAL DEV MODE: Pozwalam na wywolanie CRON bez naglowka X-Appengine-Cron")
+        else:
+            log.warning("Nieautoryzowana proba wywolania /cron/run_sync (nie z Cron).")
+            return jsonify({"status": "ignored", "message": "Request not from App Engine Cron"}), 200
 
     now_utc = datetime.now(dt_timezone.utc)
     current_hour = now_utc.hour
@@ -108,6 +124,74 @@ def cron_run_sync():
         "tasks_queued": tasks_queued,
         "current_time_utc": f"{current_hour:02d}:{current_minute:02d}",
         "accounts": [{"id": acc.id, "name": acc.name} for acc in accounts_to_sync]
+    }), 202
+
+
+@sync_bp.route('/cron/run_mail')
+def cron_run_mail():
+    """
+    Smart CRON endpoint dla wysylki maili - uruchamiany co godzine.
+    Sprawdza ktore konta wymagaja wysylki o danej godzinie UTC.
+    """
+    is_cron_request = request.headers.get('X-Appengine-Cron') == 'true'
+
+    is_local_dev = os.environ.get('GAE_ENV') != 'standard'
+    allow_local_cron = os.environ.get('ALLOW_LOCAL_CRON', 'false').lower() == 'true'
+
+    if not is_cron_request:
+        if is_local_dev and allow_local_cron:
+            log.info("[Smart CRON Mail] LOCAL DEV MODE: Pozwalam na wywolanie bez naglowka")
+        else:
+            log.warning("Nieautoryzowana proba wywolania /cron/run_mail")
+            return jsonify({"status": "ignored", "message": "Request not from App Engine Cron"}), 200
+
+    now_utc = datetime.now(dt_timezone.utc)
+    current_hour = now_utc.hour
+    current_minute = now_utc.minute
+
+    log.info(f"[Smart CRON Mail] Czas UTC: {current_hour:02d}:{current_minute:02d}")
+
+    active_accounts = Account.query.filter_by(is_active=True).all()
+
+    if not active_accounts:
+        log.warning("[Smart CRON Mail] Brak aktywnych kont.")
+        return jsonify({"status": "no_accounts"}), 200
+
+    accounts_to_mail = []
+
+    for account in active_accounts:
+        settings = AccountScheduleSettings.get_for_account(account.id)
+
+        if not settings.is_mail_enabled:
+            log.info(f"[Smart CRON Mail] Pomijam {account.name} - wysylka wylaczona")
+            continue
+
+        if current_hour == settings.mail_send_hour:
+            accounts_to_mail.append(account)
+            log.info(f"[Smart CRON Mail] Konto {account.name} - zaplanowana wysylka o {settings.mail_send_hour:02d}:{settings.mail_send_minute:02d} UTC")
+        else:
+            log.debug(f"[Smart CRON Mail] Pomijam {account.name} - zaplanowane: {settings.mail_send_hour:02d} UTC, teraz: {current_hour:02d} UTC")
+
+    if not accounts_to_mail:
+        log.info(f"[Smart CRON Mail] Brak kont do wysylki o godzinie {current_hour:02d} UTC")
+        return jsonify({
+            "status": "no_mail_needed",
+            "current_hour_utc": current_hour
+        }), 200
+
+    log.info(f"[Smart CRON Mail] Kolejkuje wysylke dla {len(accounts_to_mail)} kont...")
+
+    tasks_queued = 0
+    for account in accounts_to_mail:
+        if enqueue_mail_task(account.id):
+            tasks_queued += 1
+
+    log.info(f"[Smart CRON Mail] Zakolejkowano {tasks_queued} zadan")
+    return jsonify({
+        "status": "accepted",
+        "tasks_queued": tasks_queued,
+        "current_hour_utc": current_hour,
+        "accounts": [{"id": acc.id, "name": acc.name} for acc in accounts_to_mail]
     }), 202
 
 

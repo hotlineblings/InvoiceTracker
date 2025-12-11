@@ -26,3 +26,7 @@ venv/
 *.log
 backup_*.csv
 cloud-sql-proxy
+cloud_sql_proxy
+
+# Local environment (secrets in app.yaml for production)
+.env

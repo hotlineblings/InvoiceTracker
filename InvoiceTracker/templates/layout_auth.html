@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>InvoiceTracker - Panel Windykacyjny</title>
+
+  <!-- Bootstrap 5.3 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+
+  <style>
+    /* ============================================
+       CSS VARIABLES - Light & Dark Modes
+       ============================================ */
+    :root {
+      /* Primary Colors - Royal Blue */
+      --color-primary: #2563eb;
+      --color-primary-dark: #1e40af;
+      --color-primary-light: #3b82f6;
+      --color-primary-gradient: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+
+      /* Secondary Colors - Vivid Purple */
+      --color-secondary: #7c3aed;
+      --color-secondary-dark: #6d28d9;
+      --color-secondary-light: #8b5cf6;
+
+      /* Status Colors */
+      --color-success: #10b981;
+      --color-success-light: #d1fae5;
+      --color-warning: #f59e0b;
+      --color-warning-light: #fef3c7;
+      --color-danger: #ef4444;
+      --color-danger-light: #fee2e2;
+      --color-info: #06b6d4;
+      --color-info-light: #cffafe;
+
+      /* Neutrals */
+      --color-text-primary: #1f2937;
+      --color-text-secondary: #64748b;
+      --color-text-muted: #94a3b8;
+
+      --color-bg-primary: #ffffff;
+      --color-bg-secondary: #f8fafc;
+      --color-bg-tertiary: #f1f5f9;
+
+      --color-border: #e2e8f0;
+      --color-border-light: #f1f5f9;
+
+      /* Shadows */
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+      --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+      /* Transitions */
+      --transition-fast: 0.2s ease;
+      --transition-base: 0.3s ease;
+
+      /* Border Radius */
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+      --radius-xl: 12px;
+    }
+
+    /* Dark Mode Variables */
+    html.dark {
+      --color-text-primary: #e2e8f0;
+      --color-text-secondary: #cbd5e1;
+      --color-text-muted: #94a3b8;
+
+      --color-bg-primary: #0f172a;
+      --color-bg-secondary: #1e293b;
+      --color-bg-tertiary: #334155;
+
+      --color-border: #475569;
+      --color-border-light: #64748b;
+
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+      --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.3), 0 8px 10px -6px rgb(0 0 0 / 0.3);
+    }
+
+    /* ============================================
+       BASE STYLES
+       ============================================ */
+    * {
+      transition: background-color var(--transition-base),
+                  color var(--transition-base),
+                  border-color var(--transition-base);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: var(--color-bg-secondary);
+      color: var(--color-text-primary);
+      min-height: 100vh;
+    }
+
+    /* Bootstrap Overrides for Dark Mode */
+    .text-muted {
+      color: var(--color-text-muted) !important;
+    }
+
+    /* ============================================
+       CARDS
+       ============================================ */
+    .card-custom {
+      background-color: var(--color-bg-primary);
+      border: 2px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      transition: all var(--transition-fast);
+    }
+
+    .card-custom:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+
+    .card-header-gradient {
+      background: var(--color-primary-gradient);
+      color: white;
+      font-weight: 600;
+      padding: 1.25rem 1.5rem;
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    }
+
+    .card-body {
+      padding: 1.25rem 1.5rem;
+    }
+
+    /* ============================================
+       BUTTONS
+       ============================================ */
+    .btn {
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      transition: all var(--transition-fast);
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--color-primary-gradient);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-success {
+      background-color: var(--color-success);
+      color: white;
+    }
+
+    .btn-success:hover {
+      background-color: #059669;
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    /* ============================================
+       BADGES
+       ============================================ */
+    .badge-custom {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-md);
+      font-weight: 600;
+      font-size: 0.8125rem;
+      line-height: 1;
+    }
+
+    .badge-success {
+      background-color: var(--color-success);
+      color: white;
+    }
+
+    .badge-warning {
+      background-color: var(--color-warning);
+      color: white;
+    }
+
+    /* ============================================
+       FORMS
+       ============================================ */
+    .form-label {
+      font-weight: 500;
+      color: var(--color-text-secondary);
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+    }
+
+    .form-control, .form-select {
+      border: 2px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: 0.625rem 0.875rem;
+      background-color: var(--color-bg-primary);
+      color: var(--color-text-primary);
+      transition: all var(--transition-fast);
+    }
+
+    .form-control:focus, .form-select:focus {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      background-color: var(--color-bg-primary);
+      color: var(--color-text-primary);
+    }
+
+    .form-control-lg {
+      padding: 0.75rem 1rem;
+      font-size: 1rem;
+    }
+
+    /* ============================================
+       ALERTS
+       ============================================ */
+    .alert-custom {
+      border: none;
+      border-radius: var(--radius-lg);
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      box-shadow: var(--shadow-sm);
+      animation: slideDown 0.3s ease;
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .alert-success {
+      background-color: var(--color-success-light);
+      color: #065f46;
+    }
+
+    html.dark .alert-success {
+      background-color: rgba(16, 185, 129, 0.2);
+      color: #6ee7b7;
+    }
+
+    .alert-danger {
+      background-color: var(--color-danger-light);
+      color: #991b1b;
+    }
+
+    html.dark .alert-danger {
+      background-color: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+    }
+
+    .alert-warning {
+      background-color: var(--color-warning-light);
+      color: #92400e;
+    }
+
+    html.dark .alert-warning {
+      background-color: rgba(245, 158, 11, 0.2);
+      color: #fcd34d;
+    }
+
+    .alert-info {
+      background-color: var(--color-info-light);
+      color: #155e75;
+    }
+
+    html.dark .alert-info {
+      background-color: rgba(6, 182, 212, 0.2);
+      color: #67e8f9;
+    }
+
+    /* ============================================
+       AUTH PAGE SPECIFIC
+       ============================================ */
+    .card-footer {
+      background-color: var(--color-bg-secondary);
+      border-top: 1px solid var(--color-border);
+    }
+
+    .invalid-feedback {
+      font-size: 0.875rem;
+    }
+
+    /* ============================================
+       RESPONSIVE
+       ============================================ */
+    @media (max-width: 768px) {
+      .btn {
+        font-size: 0.875rem;
+        padding: 0.4rem 0.8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Flash Messages -->
+  <div class="container mt-3">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-custom alert-dismissible fade show" role="alert">
+            {% if category == 'success' %}
+              <i class="bi bi-check-circle-fill"></i>
+            {% elif category == 'danger' %}
+              <i class="bi bi-exclamation-triangle-fill"></i>
+            {% elif category == 'warning' %}
+              <i class="bi bi-exclamation-circle-fill"></i>
+            {% elif category == 'info' %}
+              <i class="bi bi-info-circle-fill"></i>
+            {% endif %}
+            <span>{{ message }}</span>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+  </div>
+
+  <!-- Main Content -->
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Dark Mode Script (check saved preference) -->
+  <script>
+    (function() {
+      const currentMode = localStorage.getItem('darkMode') || 'light';
+      if (currentMode === 'dark') {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+</body>
+</html>

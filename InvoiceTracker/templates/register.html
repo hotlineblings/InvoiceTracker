@@ -1,0 +1,138 @@
+{% extends "layout_auth.html" %}
+{% block content %}
+<div class="register-container">
+  <div class="row justify-content-center w-100">
+    <div class="col-11 col-sm-10 col-md-8 col-lg-6 col-xl-5">
+      <div class="card-custom shadow-lg register-card">
+        <div class="card-header-gradient text-center py-4">
+          <i class="bi bi-building" style="font-size: 3rem;"></i>
+          <h3 class="mb-0 mt-2">Zarejestruj firmę</h3>
+          <p class="mb-0 mt-1 text-white-50">Utwórz konto w InvoiceTracker</p>
+        </div>
+        <div class="card-body p-4 p-md-5">
+          <form method="post">
+            {{ form.hidden_tag() }}
+
+            <h6 class="text-muted mb-3">
+              <i class="bi bi-person me-1"></i>Dane logowania
+            </h6>
+
+            <div class="mb-3">
+              <label for="email" class="form-label">
+                <i class="bi bi-envelope me-1"></i>Email
+              </label>
+              <input type="email" name="email" id="email" class="form-control form-control-lg"
+                     placeholder="twój@email.pl" required autofocus
+                     value="{{ form.email.data or '' }}">
+              {% if form.email.errors %}
+                <div class="invalid-feedback d-block">{{ form.email.errors[0] }}</div>
+              {% endif %}
+            </div>
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label for="password" class="form-label">
+                  <i class="bi bi-lock me-1"></i>Hasło
+                </label>
+                <input type="password" name="password" id="password" class="form-control form-control-lg"
+                       placeholder="Min. 8 znaków" required minlength="8">
+                {% if form.password.errors %}
+                  <div class="invalid-feedback d-block">{{ form.password.errors[0] }}</div>
+                {% endif %}
+              </div>
+
+              <div class="col-md-6 mb-3">
+                <label for="confirm_password" class="form-label">
+                  <i class="bi bi-lock-fill me-1"></i>Potwierdź hasło
+                </label>
+                <input type="password" name="confirm_password" id="confirm_password"
+                       class="form-control form-control-lg" placeholder="Powtórz hasło" required>
+                {% if form.confirm_password.errors %}
+                  <div class="invalid-feedback d-block">{{ form.confirm_password.errors[0] }}</div>
+                {% endif %}
+              </div>
+            </div>
+
+            <hr class="my-4">
+
+            <h6 class="text-muted mb-3">
+              <i class="bi bi-building me-1"></i>Dane firmy
+            </h6>
+
+            <div class="mb-3">
+              <label for="company_name" class="form-label">
+                <i class="bi bi-building me-1"></i>Nazwa firmy
+              </label>
+              <input type="text" name="company_name" id="company_name" class="form-control form-control-lg"
+                     placeholder="Twoja Firma Sp. z o.o." required
+                     value="{{ form.company_name.data or '' }}">
+              {% if form.company_name.errors %}
+                <div class="invalid-feedback d-block">{{ form.company_name.errors[0] }}</div>
+              {% endif %}
+            </div>
+
+            <div class="mb-4">
+              <label for="nip" class="form-label">
+                <i class="bi bi-hash me-1"></i>NIP (opcjonalnie)
+              </label>
+              <input type="text" name="nip" id="nip" class="form-control form-control-lg"
+                     placeholder="1234567890"
+                     value="{{ form.nip.data or '' }}">
+              {% if form.nip.errors %}
+                <div class="invalid-feedback d-block">{{ form.nip.errors[0] }}</div>
+              {% endif %}
+            </div>
+
+            <!-- reCAPTCHA Enterprise -->
+            <div class="g-recaptcha mb-3"
+                 data-sitekey="6LcIVh8sAAAAADYgtfnv0Q9S_S-s4XgRBNlzk9_z"
+                 data-action="REGISTER">
+            </div>
+
+            <div class="d-grid mt-4">
+              <button type="submit" class="btn btn-success btn-lg">
+                <i class="bi bi-person-plus me-2"></i>Zarejestruj się
+              </button>
+            </div>
+          </form>
+
+          <!-- reCAPTCHA Enterprise Script -->
+          <script src="https://www.google.com/recaptcha/enterprise.js" async defer></script>
+        </div>
+        <div class="card-footer text-center py-3">
+          <small>
+            Masz już konto?
+            <a href="{{ url_for('auth.login') }}" class="text-primary fw-semibold">Zaloguj się</a>
+          </small>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.register-container {
+  min-height: 80vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+.register-card {
+  min-width: 320px;
+  max-width: 550px;
+  margin: 0 auto;
+}
+
+.card-footer {
+  background-color: var(--color-bg-secondary);
+  border-top: 1px solid var(--color-border);
+}
+
+.form-control-lg {
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+}
+</style>
+{% endblock %}

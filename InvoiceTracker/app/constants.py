@@ -3,6 +3,15 @@ Stałe aplikacji.
 Definicje etapów powiadomień i mapowania.
 """
 
+# ===== MULTI-PROVIDER CREDENTIALS SCHEMA =====
+# Wymagane pola credentials dla każdego typu providera
+# Używane w Account.is_provider_configured i walidacji formularzy
+REQUIRED_CREDENTIALS: dict[str, list[str]] = {
+    'infakt': ['api_key'],
+    'wfirma': ['access_key', 'secret_key', 'app_key', 'company_id'],
+    'fakturownia': ['api_token', 'account_prefix'],
+}
+
 # ===== CANONICAL SOURCE OF TRUTH =====
 # Definicja oficjalnej struktury 5 etapów powiadomień
 # Każdy profil MUSI mieć dokładnie te same nazwy w bazie danych

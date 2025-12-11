@@ -1,1 +1,41 @@
+# Sensitive files - NEVER commit
+.env
 app.yaml
+*.pem
+*.key
+credentials.json
+service-account*.json
+
+# Cloud SQL Proxy binary
+cloud_sql_proxy
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Migration scripts with potential credentials
+add_profile.py
+edit_profile.py
+
+# Local development
+*.log
+*.sqlite
+*.db

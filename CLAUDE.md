@@ -55,7 +55,7 @@ Entry point: `InvoiceTracker/app/__init__.py:create_app()` - configures Flask, e
 | Service | Responsibility |
 |---------|----------------|
 | `update_db.py` | `sync_new_invoices()`, `update_existing_cases()`, `run_full_sync()` |
-| `scheduler.py` | APScheduler with per-account email jobs |
+| `scheduler.py` | Mail service logic (called by Cloud Tasks) |
 | `send_email.py` | Multi-tenant SMTP, `send_email_for_account(account, ...)` |
 | `case_service.py` | Case business logic |
 | `cloud_tasks.py` | Cloud Tasks / local HTTP queue for async operations |
@@ -211,4 +211,78 @@ AQUATEST_EMAIL_FROM=email@domain.pl
 
 - **Database**: All timestamps stored in UTC
 - **UI Display**: Converted to `Europe/Warsaw` (CET/CEST)
-- **Scheduler**: APScheduler jobs use UTC hours from `AccountScheduleSettings`
+- **Scheduler**: Cloud Tasks + Cron (uses `mail_send_hour` from `AccountScheduleSettings`)
+
+---
+
+## SaaS Roadmap
+
+InvoiceTracker is evolving into a self-serve SaaS platform. Full roadmap: `/docs/SAAS_ROADMAP.md`
+
+### Current State: 53% SaaS-Ready
+
+| Area | Status | Target |
+|------|--------|--------|
+| Multi-tenancy | Complete | Account isolation via `tenant_context` |
+| Billing | Planned | Stripe + usage-based (invoices/month) |
+| Providers | InFakt only | + Fakturownia, wFirma, iFirma |
+| Email | SMTP per-account | SendGrid API with tracking |
+| Security | Basic | + Email verification, Audit Log, RODO |
+
+### Planned Models
+
+| Model | Purpose |
+|-------|---------|
+| `Plan` | Pricing tiers (Starter/Business/Enterprise) |
+| `Subscription` | Account subscription + Stripe integration |
+| `UsageRecord` | Invoice/email usage tracking per day |
+| `AuditLog` | Change history for RODO compliance |
+| `Notification` | In-app alerts (sync failures, plan limits) |
+| `PasswordResetToken` | Self-service password recovery |
+| `EmailEvent` | SendGrid delivery tracking |
+
+### Key Patterns (Planned)
+
+**Multi-provider pattern:**
+```python
+# Each provider implements InvoiceProvider ABC
+provider = get_provider(account)  # Factory returns appropriate provider
+invoices = provider.fetch_invoices(...)
+```
+
+**Usage tracking:**
+```python
+# After each sync
+UsageRecord.increment(account_id, invoices=count)
+```
+
+**Plan enforcement:**
+```python
+@require_active_subscription
+def sync_invoices():
+    allowed, msg = check_usage_limit(account_id)
+    if not allowed:
+        raise PlanLimitExceeded(msg)
+```
+
+### New Revenue Stream: Service Fee
+
+Cases can include:
+- **Interest** (statutory 11.25% p.a.) - goes to customer
+- **Service fee** (fixed, e.g., 50 PLN) - goes to InvoiceTracker
+
+```python
+Case.include_interest = True     # Checkbox in case details
+Case.include_service_fee = True  # Platform revenue per case
+```
+
+### Implementation Phases
+
+1. **Billing** - Stripe + plans + limits
+2. **Password Reset** - Self-service recovery
+3. **Security** - Email verification + Audit Log + RODO
+4. **Multi-Provider** - Fakturownia, wFirma, iFirma
+5. **SendGrid** - Email API + white-label
+6. **Interest/Fees** - Debt calculation + service fee
+7. **Notifications** - In-app alerts
+8. **Dashboards** - KPIs + charts
